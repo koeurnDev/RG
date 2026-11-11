@@ -1163,12 +1163,10 @@ const HTML_CONTENT = `<!DOCTYPE html>
         else if (state === 'pending') subText = 'ចុចទាញយក';
         else subText = 'រំលង';
 
-        html += \`
-          <div id="pill_ep_\${ep}" class="ep-pill \${state}" onclick="handlePillClick(\${ep})">
-            <span>EP\${String(ep).padStart(2, '0')}</span>
-            <span class="ep-subtext">\${subText}</span>
-          </div>
-        \`;
+        html += '<div id="pill_ep_' + ep + '" class="ep-pill ' + state + '" onclick="handlePillClick(' + ep + ')">' +
+            '<span>EP' + String(ep).padStart(2, '0') + '</span>' +
+            '<span class="ep-subtext">' + subText + '</span>' +
+          '</div>';
       }
       grid.innerHTML = html;
       updateStats();
@@ -1198,7 +1196,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
       for (let ep = 1; ep <= currentDrama.total; ep++) {
         if (episodeStates[ep] === 'done') done++;
       }
-      document.getElementById('epStats').innerText = \`បានទាញយក: \${done} ភាគ | នៅសល់: \${currentDrama.total - done} ភាគ\`;
+      document.getElementById('epStats').innerText = 'បានទាញយក: ' + done + ' ភាគ | នៅសល់: ' + (currentDrama.total - done) + ' ភាគ';
     }
 
     async function loadDrama(id, title, cover, total, titleKhmer) {
