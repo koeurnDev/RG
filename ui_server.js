@@ -1002,9 +1002,21 @@ const HTML_CONTENT = `<!DOCTYPE html>
       suspense: { title: '🔍 អាថ៌កំបាំង & ព្រឺព្រួច (Mystery & Suspense)', desc: 'រឿងស៊ើបអង្កេត អាថ៌កំបាំង 悬疑 惊悚' }
     };
 
-      let page = 1;
-      let pageSize = 20;
-      let displayedCount = 0;
+    let page = 1;
+    let pageSize = 20;
+    let displayedCount = 0;
+    let currentVisibleDramas = [];
+
+    function handleCoverError(img) {
+      img.onerror = null;
+      img.src = 'https://p6-novel.byteimg.com/novel-pic/dd47bf8f4357b931ef542a2f91478aed~tplv-shrink:640:0.image';
+    }
+
+    function selectDramaByIndex(idx) {
+      const d = currentVisibleDramas[idx];
+      if (!d) return;
+      loadDrama(d.id, d.title, d.cover, d.total || 80, d.titleKhmer || d.title);
+    }
 
       async function switchCategory(cat) {
       currentCategory = cat;
@@ -1067,6 +1079,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
       const q = document.getElementById('librarySearch').value.trim();
       const limit = q ? dramas.length : (displayedCount || 20);
       const visible = dramas.slice(0, limit);
+      currentVisibleDramas = visible;
 
       const statsEl = document.getElementById('categoryStats');
       if (statsEl) statsEl.innerText = visible.length + '/' + dramas.length + ' រឿង';
@@ -1097,14 +1110,12 @@ const HTML_CONTENT = `<!DOCTYPE html>
           badgeLabel = badgeMap[currentCategory][1];
         }
 
-        const safeTitle = (d.title || 'Drama').replace(/'/g, "\\\\'");
-        const safeKhmer = (d.titleKhmer || d.title || '').replace(/'/g, "\\\\'");
         const safeCover = d.cover || 'https://p6-novel.byteimg.com/novel-pic/dd47bf8f4357b931ef542a2f91478aed~tplv-shrink:640:0.image';
         const totalEps = d.total || 80;
 
-        return '<div class="drama-card-mini" onclick="loadDrama(\'' + d.id + '\', \'' + safeTitle + '\', \'' + safeCover + '\', ' + totalEps + ', \'' + safeKhmer + '\')">' +
+        return '<div class="drama-card-mini" onclick="selectDramaByIndex(' + idx + ')">' +
             '<div class="rank-badge ' + badgeClass + '">' + badgeLabel + '</div>' +
-            '<img src="' + safeCover + '" class="mini-cover" loading="lazy" onerror="this.src=\'https://p6-novel.byteimg.com/novel-pic/dd47bf8f4357b931ef542a2f91478aed~tplv-shrink:640:0.image\'">' +
+            '<img src="' + safeCover + '" class="mini-cover" loading="lazy" onerror="handleCoverError(this)">' +
             '<div class="mini-info">' +
               '<div class="mini-title">' + d.title + '</div>' +
               '<div class="mini-khmer">' + (d.titleKhmer || 'រឿងភាគខ្លីពិសេស') + '</div>' +
