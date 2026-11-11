@@ -868,7 +868,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
         <span id="dlToolIcon">⬇️</span> <span id="dlToolLabel">ទាញយក Tool</span>
         <span id="dlToolProgress" style="display:none; position:absolute; bottom:0; left:0; height:3px; background:#48bb78; width:0%; transition:width 0.3s;"></span>
       </button>
-      <button class="btn-folder" onclick="openFolder()">📂 បើក Folder វីដេអូ</button>
+      <button class="btn-folder" id="openFolderBtn" onclick="openFolder()">📂 បើក Folder វីដេអូ</button>
     </div>
   </div>
 
@@ -1468,8 +1468,28 @@ const HTML_CONTENT = `<!DOCTYPE html>
       document.getElementById('liveStatusText').innerText = '🛑 បានផ្អាកការទាញយកដោយជោគជ័យ';
     }
 
-    function openFolder() {
-      fetch('/api/open-folder', { method: 'POST' });
+    async function openFolder() {
+      const btn = document.getElementById('openFolderBtn');
+      const origText = btn ? btn.innerText : '📂 បើក Folder វីដេអូ';
+      if (btn) btn.innerText = '📂 កំពុងបើក...';
+
+      const title = currentDrama ? currentDrama.title : '';
+      try {
+        await fetch('/api/open-folder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: title })
+        });
+        if (btn) {
+          btn.innerText = '✅ បានបើក Folder!';
+          setTimeout(() => { if (btn) btn.innerText = origText; }, 2000);
+        }
+      } catch (err) {
+        if (btn) {
+          btn.innerText = '❌ បរាជ័យ';
+          setTimeout(() => { if (btn) btn.innerText = origText; }, 2000);
+        }
+      }
     }
 
     async function handleSearch() {
@@ -1983,10 +2003,36 @@ const server = http.createServer(async (req, res) => {
     return res.end(JSON.stringify({ success: true }));
   }
 
-  if (url.pathname === '/api/open-folder' && req.method === 'POST') {
-    exec('explorer.exe "D:\\HDRG"');
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ success: true }));
+  if (url.pathname === '/api/open-folder') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      let targetPath = 'D:\\HDRG';
+      try {
+        const { title } = JSON.parse(body || '{}');
+        if (title) {
+          const cleanTitle = title.replace(/[\\/:*?"<>|]/g, '_');
+          const dramaDir = path.join('D:\\HDRG', cleanTitle);
+          if (fs.existsSync(dramaDir)) {
+            targetPath = dramaDir;
+          }
+        }
+      } catch (_) {}
+
+      try {
+        if (!fs.existsSync(targetPath)) {
+          fs.mkdirSync(targetPath, { recursive: true });
+        }
+        const p = spawn('explorer.exe', [targetPath], { detached: true, stdio: 'ignore' });
+        p.unref();
+      } catch (err) {
+        try { exec(`start "" "${targetPath}"`); } catch (_) {}
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ success: true, path: targetPath }));
+    });
+    return;
   }
 
   // Download Tool: serve setup.exe directly to browser
