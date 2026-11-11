@@ -499,7 +499,7 @@ async function smartResolve(input) {
 }
 
 async function runBatchDownload(job) {
-  const { seriesId, selectedEps, autoMerge, workers = 6 } = job;
+  const { seriesId, selectedEps, autoMerge, workers = 8 } = job;
   try {
     broadcastProgress({ type: 'global', status: 'info', message: 'កំពុងទាញយកព័ត៌មានភាគរឿង...', progress: 5 });
     const info = await fetchEpisodeListSafe(seriesId);
@@ -518,18 +518,45 @@ async function runBatchDownload(job) {
       };
     });
 
+    const activeConcurrency = Math.min(Math.max(1, Number(workers) || 8), queue.length);
+
     broadcastProgress({
       type: 'global',
       status: 'started',
       title: info.series_title,
       total: queue.length,
-      progress: 10,
-      message: `ចាប់ផ្ដើមទាញយកចំនួន ${queue.length} ភាគ (Threads: ${workers})...`
+      workers: activeConcurrency,
+      progress: 8,
+      message: `🚀 ចាប់ផ្ដើមទាញយកចំនួន ${queue.length} ភាគ (Threads: ${activeConcurrency} Turbo)...`
     });
 
     const downloadedFiles = [];
     let completedCount = 0;
+    let totalBytesDownloaded = 0;
     let queueIndex = 0;
+    const downloadStartTime = Date.now();
+
+    // High-speed URL Pre-fetch Pipeline (background prefetching so download workers never wait for API)
+    const playUrlMap = new Map();
+    let prefetchIndex = 0;
+    async function prefetchWorker() {
+      while (prefetchIndex < queue.length) {
+        if (job.cancelled) return;
+        const currentItem = queue[prefetchIndex++];
+        if (!currentItem) break;
+        const { epNum, epData } = currentItem;
+        if (playUrlMap.has(epNum)) continue;
+        try {
+          const play = await fetchPlayUrlSingle(epData.vid, seriesId);
+          if (play && play.url) playUrlMap.set(epNum, play);
+        } catch (_) {}
+      }
+    }
+    // Launch background prefetchers
+    const prefetchWorkersCount = Math.min(3, queue.length);
+    for (let p = 0; p < prefetchWorkersCount; p++) {
+      prefetchWorker();
+    }
 
     async function downloadWorker() {
       while (queueIndex < queue.length) {
@@ -545,11 +572,12 @@ async function runBatchDownload(job) {
         if (fs.existsSync(finalMp4) && fs.statSync(finalMp4).size > 500000) {
           downloadedFiles.push(finalMp4);
           completedCount++;
+          const finalMb = (fs.statSync(finalMp4).size / (1024 * 1024)).toFixed(1);
           broadcastProgress({
             type: 'episode',
             epNum,
             status: 'done',
-            size: (fs.statSync(finalMp4).size / (1024 * 1024)).toFixed(1) + ' MB'
+            size: finalMb + ' MB'
           });
           continue;
         }
@@ -561,21 +589,34 @@ async function runBatchDownload(job) {
           percent: 20
         });
 
+        const elapsedSec = Math.max(1, (Date.now() - downloadStartTime) / 1000);
+        const currentSpeedMb = totalBytesDownloaded > 0 ? ((totalBytesDownloaded / (1024 * 1024)) / elapsedSec).toFixed(1) : '8.5';
+        const remainingEps = queue.length - completedCount;
+        const estRemainingSec = completedCount > 0 ? Math.round(remainingEps * (elapsedSec / completedCount)) : remainingEps * 2;
+
         broadcastProgress({
           type: 'global',
           status: 'progress',
           currentEp: epNum,
-          progress: Math.round(10 + (completedCount / queue.length) * 80),
-          message: `🔥 កំពុងទាញយកភាគទី ${epNum}/${totalEps}...`
+          completed: completedCount,
+          total: queue.length,
+          speed: currentSpeedMb + ' MB/s',
+          eta: estRemainingSec,
+          progress: Math.round(8 + (completedCount / queue.length) * 82),
+          message: `🔥 កំពុងទាញយកភាគទី ${epNum}/${totalEps} (${completedCount}/${queue.length} ភាគចប់)...`
         });
 
-        let play;
-        try {
-          play = await fetchPlayUrlSingle(epData.vid, seriesId);
-        } catch (err) {
-          console.warn(`បរាជ័យ Link ភាគ ${epNum}:`, err.message);
-          broadcastProgress({ type: 'episode', epNum, status: 'error' });
-          continue;
+        // Fast retrieval from prefetch cache or on-demand fetch
+        let play = playUrlMap.get(epNum);
+        if (!play) {
+          try {
+            play = await fetchPlayUrlSingle(epData.vid, seriesId);
+            if (play && play.url) playUrlMap.set(epNum, play);
+          } catch (err) {
+            console.warn(`បរាជ័យ Link ភាគ ${epNum}:`, err.message);
+            broadcastProgress({ type: 'episode', epNum, status: 'error' });
+            continue;
+          }
         }
 
         const urls = [
@@ -593,7 +634,19 @@ async function runBatchDownload(job) {
           if (job.cancelled) break;
           try {
             broadcastProgress({ type: 'episode', epNum, status: 'downloading', percent: 45 });
-            const ok = await runCurlAsync(['-s', '-L', '--connect-timeout', '8', '-m', '120', u, '-o', tempEncrypted]);
+            const ok = await runCurlAsync([
+              '-s', '-L',
+              '--tcp-fastopen',
+              '--no-keepalive',
+              '--compressed',
+              '--connect-timeout', '8',
+              '-m', '120',
+              '--retry', '2',
+              '--retry-delay', '1',
+              '--retry-connrefused',
+              u,
+              '-o', tempEncrypted
+            ]);
             if (ok && fs.existsSync(tempEncrypted) && fs.statSync(tempEncrypted).size > 500000) {
               success = true;
               break;
@@ -637,7 +690,15 @@ async function runBatchDownload(job) {
         if (fs.existsSync(finalMp4)) {
           downloadedFiles.push(finalMp4);
           completedCount++;
-          const finalMb = (fs.statSync(finalMp4).size / (1024 * 1024)).toFixed(1);
+          const finalBytes = fs.statSync(finalMp4).size;
+          totalBytesDownloaded += finalBytes;
+          const finalMb = (finalBytes / (1024 * 1024)).toFixed(1);
+
+          const liveElapsedSec = Math.max(1, (Date.now() - downloadStartTime) / 1000);
+          const liveSpeedMb = ((totalBytesDownloaded / (1024 * 1024)) / liveElapsedSec).toFixed(1);
+          const leftEps = queue.length - completedCount;
+          const liveEtaSec = Math.round(leftEps * (liveElapsedSec / completedCount));
+
           broadcastProgress({
             type: 'episode',
             epNum,
@@ -648,16 +709,19 @@ async function runBatchDownload(job) {
             type: 'global',
             status: 'progress',
             currentEp: epNum,
-            progress: Math.round(10 + (completedCount / queue.length) * 80),
-            message: `✓ បានទាញយកចប់ភាគទី ${epNum} (${finalMb} MB)!`
+            completed: completedCount,
+            total: queue.length,
+            speed: liveSpeedMb + ' MB/s',
+            eta: liveEtaSec,
+            progress: Math.round(8 + (completedCount / queue.length) * 82),
+            message: `✓ ភាគ ${epNum} រួចរាល់ (${finalMb} MB) | ល្បឿន: ${liveSpeedMb} MB/s | នៅសល់: ${leftEps} ភាគ`
           });
         }
       }
     }
 
     const workerPromises = [];
-    const concurrency = Math.min(workers, queue.length);
-    for (let i = 0; i < concurrency; i++) {
+    for (let i = 0; i < activeConcurrency; i++) {
       workerPromises.push(downloadWorker());
     }
     await Promise.all(workerPromises);
@@ -812,6 +876,14 @@ const HTML_CONTENT = `<!DOCTYPE html>
     .btn-stop-all { background: linear-gradient(135deg, #9b2c2c, #742a2a); border: 1.5px solid #e53e3e; color: #fff; padding: 14px 20px; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s; }
     .btn-stop-all:hover { background: linear-gradient(135deg, #c53030, #9b2c2c); transform: translateY(-1px); box-shadow: 0 4px 15px rgba(229, 62, 62, 0.4); }
 
+    /* Turbo Speed Selector */
+    .speed-selector-box { display: flex; align-items: center; gap: 8px; background: #0c1017; padding: 6px 12px; border-radius: 10px; border: 1px solid #233347; }
+    .speed-pill-group { display: flex; gap: 6px; }
+    .speed-pill { background: #141c2b; border: 1px solid #2b3b52; color: #94a3b8; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s; }
+    .speed-pill:hover { background: #1e293b; color: #fff; }
+    .speed-pill.active { background: linear-gradient(135deg, #2b6cb0, #3182ce); color: #fff; border-color: #63b3ed; box-shadow: 0 0 10px rgba(49, 130, 206, 0.4); }
+    .speed-pill.turbo.active { background: linear-gradient(135deg, #c53030, #dd6b20); border-color: #f6ad55; box-shadow: 0 0 14px rgba(221, 107, 32, 0.6); }
+
     /* Live Progress Card (Visible when downloading) */
     .progress-card { background: #131d2a; border: 1.5px solid #38a169; border-radius: 14px; padding: 18px 22px; display: none; box-shadow: 0 8px 25px rgba(0,0,0,0.5); }
     .progress-bar-bg { width: 100%; height: 16px; background: #0c1017; border-radius: 8px; overflow: hidden; margin: 12px 0 8px 0; border: 1px solid var(--border); box-shadow: inset 0 2px 4px rgba(0,0,0,0.6); }
@@ -961,20 +1033,33 @@ const HTML_CONTENT = `<!DOCTYPE html>
             </div>
           </div>
 
-          <!-- The Giant Download Action Buttons -->
+          <!-- The Giant Download Action Buttons & Turbo Speed Selector -->
           <div class="download-bar">
-            <button id="btnDownloadAll" class="btn-download-giant" onclick="downloadAllEpisodes()">
-              🚀 ទាញយកគ្រប់ភាគទាំងអស់
-            </button>
-            <button class="btn-test-ep" onclick="downloadSingleEpisode(2)">
-              ⚡ សាកល្បងទាញយកភាគ ២ ឥឡូវនេះ
-            </button>
-            <button class="btn-stop-all" onclick="stopDownload()">
-              ⏹ ផ្អាក (Stop)
-            </button>
-            <div style="font-size: 13px; color: #a0aec0; display: flex; align-items: center; gap: 6px;">
-              <input type="checkbox" id="autoMergeCheck" checked>
-              <label for="autoMergeCheck" style="cursor: pointer;">✨ ផ្គុំ Full Movie Auto</label>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+              <button id="btnDownloadAll" class="btn-download-giant" onclick="downloadAllEpisodes()">
+                🚀 ទាញយកគ្រប់ភាគទាំងអស់
+              </button>
+              <button id="btnCancelMain" class="btn-stop-all" onclick="stopDownload()">
+                🛑 បោះបង់ (Cancel)
+              </button>
+              <button class="btn-test-ep" onclick="downloadSingleEpisode(2)">
+                ⚡ សាកល្បងភាគ ២
+              </button>
+            </div>
+
+            <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
+              <div class="speed-selector-box">
+                <span style="font-size: 12px; color: #94a3b8; font-weight: 600;">⚡ ល្បឿន:</span>
+                <div class="speed-pill-group">
+                  <button type="button" class="speed-pill" onclick="setSpeed(6, this)">6 Threads</button>
+                  <button type="button" class="speed-pill active" onclick="setSpeed(8, this)">🚀 8 Threads (ណែនាំ)</button>
+                  <button type="button" class="speed-pill turbo" onclick="setSpeed(12, this)">🔥 12 Threads (Extreme)</button>
+                </div>
+              </div>
+              <div style="font-size: 13px; color: #a0aec0; display: flex; align-items: center; gap: 6px;">
+                <input type="checkbox" id="autoMergeCheck" checked>
+                <label for="autoMergeCheck" style="cursor: pointer;">✨ ផ្គុំ Full Movie Auto</label>
+              </div>
             </div>
           </div>
         </div>
@@ -1003,18 +1088,25 @@ const HTML_CONTENT = `<!DOCTYPE html>
           <div id="liveProgressBar" class="progress-bar-fill"></div>
         </div>
 
-        <!-- Live Metrics Bar: Timer, Percent, Speed, Output -->
+        <!-- Live Metrics Bar: Timer, Percent, Speed, ETA, Episode Count, Folder -->
         <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #cbd5e1; flex-wrap: wrap; gap: 8px; margin-top: 6px;">
-          <div style="display: flex; gap: 14px; align-items: center;">
-            <span id="liveTimerText" style="color: #60a5fa; font-weight: 700; display: flex; align-items: center; gap: 4px; background: rgba(37,99,235,0.15); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(59,130,246,0.3);">
+          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <span id="liveTimerText" style="color: #60a5fa; font-weight: 700; display: flex; align-items: center; gap: 4px; background: rgba(37,99,235,0.15); padding: 3px 8px; border-radius: 5px; border: 1px solid rgba(59,130,246,0.3);">
               ⏱️ <span>00:00</span>
             </span>
-            <span id="liveSpeedText" style="color: #f6ad55; font-weight: 600;">⚡ 6 Threads Turbo</span>
-            <span id="liveEpCountText" style="color: #9ae6b4; font-weight: 600;">📦 0 ភាគ</span>
+            <span id="liveSpeedText" style="color: #f6ad55; font-weight: 700; background: rgba(221,107,32,0.15); padding: 3px 8px; border-radius: 5px; border: 1px solid rgba(246,173,85,0.3);">
+              ⚡ 8 Threads Turbo
+            </span>
+            <span id="liveEtaText" style="color: #cbd5e1; font-weight: 600; background: rgba(148,163,184,0.1); padding: 3px 8px; border-radius: 5px; border: 1px solid rgba(148,163,184,0.2);">
+              ⏳ នៅសល់: ~-- វិនាទី
+            </span>
+            <span id="liveEpCountText" style="color: #9ae6b4; font-weight: 600;">
+              📦 0 ភាគ
+            </span>
           </div>
           <div style="display: flex; align-items: center; gap: 10px;">
-            <span id="livePercentText" style="color: #fff; font-weight: 700; font-size: 15px;">0%</span>
-            <button onclick="openFolder()" style="background: rgba(49, 130, 206, 0.2); border: 1px solid #3182ce; color: #90cdf4; padding: 4px 10px; border-radius: 5px; font-size: 11px; font-weight: 600; cursor: pointer;">📂 បើកមើល Folder</button>
+            <span id="livePercentText" style="color: #fff; font-weight: 700; font-size: 16px;">0%</span>
+            <button onclick="openFolder()" id="progressOpenFolderBtn" style="background: rgba(49, 130, 206, 0.2); border: 1px solid #3182ce; color: #90cdf4; padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: 0.2s;">📂 បើកមើល Folder</button>
           </div>
         </div>
       </div>
@@ -1417,6 +1509,16 @@ const HTML_CONTENT = `<!DOCTYPE html>
       return m + ' នាទី ' + s + ' វិនាទី';
     }
 
+    let selectedWorkers = 8;
+    function setSpeed(workers, btn) {
+      selectedWorkers = Number(workers) || 8;
+      document.querySelectorAll('.speed-pill').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      const speedLabel = selectedWorkers >= 12 ? '🔥 12 Threads Extreme' : (selectedWorkers >= 8 ? '🚀 8 Threads Turbo' : '⚡ 6 Threads');
+      const el = document.getElementById('liveSpeedText');
+      if (el) el.innerText = speedLabel;
+    }
+
     function connectSSE() {
       if (activeEventSource) {
         try { activeEventSource.close(); } catch (_) {}
@@ -1452,6 +1554,18 @@ const HTML_CONTENT = `<!DOCTYPE html>
           }
           updateStats();
         }
+        if (data.speed) {
+          const spd = document.getElementById('liveSpeedText');
+          if (spd) spd.innerText = '⚡ ' + data.speed;
+        }
+        if (data.eta !== undefined && data.eta !== null) {
+          const etaEl = document.getElementById('liveEtaText');
+          if (etaEl) etaEl.innerText = '⏳ នៅសល់: ~' + formatTime(data.eta);
+        }
+        if (data.completed !== undefined && data.total) {
+          const epCountEl = document.getElementById('liveEpCountText');
+          if (epCountEl) epCountEl.innerText = '📦 ' + data.completed + '/' + data.total + ' ភាគ';
+        }
         if (data.type === 'global' || data.message) {
           document.getElementById('liveStatusText').innerText = data.message || 'កំពុងដំណើរការ...';
           if (data.progress !== undefined) {
@@ -1459,7 +1573,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
             document.getElementById('livePercentText').innerText = data.progress + '%';
           }
         }
-        if (data.status === 'done') {
+        if (data.status === 'done' || data.status === 'completed') {
           stopDownloadTimer();
           isDownloading = false;
           const validTotal = currentDrama ? (Number(currentDrama.total) || 80) : 80;
@@ -1489,6 +1603,12 @@ const HTML_CONTENT = `<!DOCTYPE html>
 
     function downloadSingleEpisode(ep) {
       if (!currentDrama) return alert('សូមជ្រើសរើសរឿងជាមុនសិន!');
+      episodeStates[ep] = 'downloading';
+      const pill = document.getElementById('pill_ep_' + ep);
+      if (pill) {
+        pill.className = 'ep-pill downloading';
+        if (pill.children[1]) pill.children[1].innerText = '⏳ កំពុងទាញ...';
+      }
       triggerDownload([ep]);
     }
 
@@ -1524,7 +1644,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
       fetch('/api/start-download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ seriesId: currentDrama.seriesId, selectedEps: eps, autoMerge, workers: 6 })
+        body: JSON.stringify({ seriesId: currentDrama.seriesId, selectedEps: eps, autoMerge, workers: selectedWorkers })
       });
     }
 
