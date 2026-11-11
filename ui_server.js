@@ -990,6 +990,9 @@ const HTML_CONTENT = `<!DOCTYPE html>
     </div>
 
     <div class="top-actions">
+      <a href="http://localhost:3001" target="_blank" class="btn-folder" style="border-color: #8b5cf6; color: #c4b5fd; text-decoration: none; display: flex; align-items: center; gap: 6px;" title="បើកកម្មវិធីបកប្រែអក្សររត់ EZARG (Port 3001)">
+        📝 បកប្រែ Subtitle
+      </a>
       <button class="btn-folder" onclick="openFolderModal()" id="topFolderBtn" style="border-color: #38a169; color: #9ae6b4; display: flex; align-items: center; gap: 6px;" title="ចុចដើម្បីផ្លាស់ប្តូរទីតាំងរក្សាទុក">
         📁 <span id="topFolderLabel">D:\HDRG</span>
       </button>
