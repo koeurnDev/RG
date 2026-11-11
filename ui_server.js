@@ -230,14 +230,49 @@ async function refreshTrendingDramas() {
   }
 }
 
-async function fetchCategoryDramas(category, force = false) {
+async function fetchCategoryDramas(category, page = 1, force = false) {
+  const pg = Math.max(1, parseInt(page, 10) || 1);
+  const cacheKey = `${category}_p${pg}`;
+
   if (category === 'trending') {
-    if (force || cachedTrendingDramas.length === 0) await refreshTrendingDramas();
-    return cachedTrendingDramas;
+    if (pg === 1) {
+      if (force || cachedTrendingDramas.length === 0) await refreshTrendingDramas();
+      return cachedTrendingDramas;
+    }
+    if (!force && categoryCache.has(cacheKey)) {
+      return categoryCache.get(cacheKey).dramas;
+    }
+    const { browseList } = require('./hongguo-drama/src/native/catalog');
+    const extraList = [];
+    const seen = new Set();
+    const genres = ['urban', 'romance', 'comeback', 'costume'];
+    const targetGenre = genres[(pg - 2) % genres.length];
+    const targetPage = Math.floor((pg - 2) / genres.length) + 1;
+    try {
+      const b = await browseList({ category: 'real-drama', genre: targetGenre, page: targetPage });
+      (b.results || []).forEach(item => {
+        if (item && item.series_id && !seen.has(item.series_id)) {
+          seen.add(item.series_id);
+          extraList.push({
+            id: String(item.series_id),
+            title: item.series_title,
+            titleKhmer: getKhmerTitle(item.series_title),
+            cover: item.cover || '',
+            heat: '🔥 កំពុងល្បី',
+            total: Number(item.episode_count) || 80,
+            tags: Array.isArray(item.tags) ? item.tags.slice(0, 3) : ['កំពុងល្បី', 'ពេញនិយម'],
+            category: 'trending',
+            rank: 100 + (pg - 2) * 24 + extraList.length
+          });
+        }
+      });
+    } catch (_) {}
+    categoryCache.set(cacheKey, { timestamp: Date.now(), dramas: extraList });
+    return extraList;
   }
 
-  if (!force && categoryCache.has(category)) {
-    const cached = categoryCache.get(category);
+  if (!force && categoryCache.has(cacheKey)) {
+    const cached = categoryCache.get(cacheKey);
     if (Date.now() - cached.timestamp < 10 * 60 * 1000 && cached.dramas.length > 0) {
       return cached.dramas;
     }
@@ -272,82 +307,82 @@ async function fetchCategoryDramas(category, force = false) {
   try {
     if (category === 'sad') {
       const [r1, r2, r3] = await Promise.all([
-        searchHongguo('虐恋', { page: 1 }).catch(() => ({ results: [] })),
-        searchHongguo('苦情', { page: 1 }).catch(() => ({ results: [] })),
-        searchHongguo('追妻', { page: 1 }).catch(() => ({ results: [] }))
+        searchHongguo('虐恋', { page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('苦情', { page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('追妻', { page: pg }).catch(() => ({ results: [] }))
       ]);
       r1.results?.forEach(i => addItem(i, '虐恋'));
       r2.results?.forEach(i => addItem(i, '苦情'));
       r3.results?.forEach(i => addItem(i, '追妻'));
     } else if (category === 'sweet') {
       const [r1, r2, r3] = await Promise.all([
-        searchHongguo('甜宠', { page: 1 }).catch(() => ({ results: [] })),
-        searchHongguo('先婚后爱', { page: 1 }).catch(() => ({ results: [] })),
-        searchHongguo('暗恋成真', { page: 1 }).catch(() => ({ results: [] }))
+        searchHongguo('甜宠', { page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('先婚后爱', { page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('暗恋成真', { page: pg }).catch(() => ({ results: [] }))
       ]);
       r1.results?.forEach(i => addItem(i, '甜宠'));
       r2.results?.forEach(i => addItem(i, '先婚后爱'));
       r3.results?.forEach(i => addItem(i, '暗恋成真'));
     } else if (category === 'romance') {
       const [r1, r2] = await Promise.all([
-        browseList({ category: 'real-drama', genre: 'romance', page: 1 }).catch(() => ({ results: [] })),
-        searchHongguo('爱情', { page: 1 }).catch(() => ({ results: [] }))
+        browseList({ category: 'real-drama', genre: 'romance', page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('爱情', { page: pg }).catch(() => ({ results: [] }))
       ]);
       r1.results?.forEach(i => addItem(i, '爱情'));
       r2.results?.forEach(i => addItem(i, '都市爱情'));
     } else if (category === 'ceo') {
       const [r1, r2, r3] = await Promise.all([
-        searchHongguo('总裁', { page: 1 }).catch(() => ({ results: [] })),
-        searchHongguo('豪门', { page: 1 }).catch(() => ({ results: [] })),
-        searchHongguo('闪婚', { page: 1 }).catch(() => ({ results: [] }))
+        searchHongguo('总裁', { page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('豪门', { page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('闪婚', { page: pg }).catch(() => ({ results: [] }))
       ]);
       r1.results?.forEach(i => addItem(i, '总裁'));
       r2.results?.forEach(i => addItem(i, '豪门'));
       r3.results?.forEach(i => addItem(i, '闪婚'));
     } else if (category === 'comeback') {
       const [r1, r2] = await Promise.all([
-        browseList({ category: 'real-drama', genre: 'comeback', page: 1 }).catch(() => ({ results: [] })),
-        searchHongguo('逆袭', { page: 1 }).catch(() => ({ results: [] }))
+        browseList({ category: 'real-drama', genre: 'comeback', page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('逆袭', { page: pg }).catch(() => ({ results: [] }))
       ]);
       r1.results?.forEach(i => addItem(i, '逆袭'));
       r2.results?.forEach(i => addItem(i, '战神'));
     } else if (category === 'costume') {
       const [r1, r2, r3] = await Promise.all([
-        browseList({ category: 'real-drama', genre: 'costume', page: 1 }).catch(() => ({ results: [] })),
-        searchHongguo('古装', { page: 1 }).catch(() => ({ results: [] })),
-        searchHongguo('穿越', { page: 1 }).catch(() => ({ results: [] }))
+        browseList({ category: 'real-drama', genre: 'costume', page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('古装', { page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('穿越', { page: pg }).catch(() => ({ results: [] }))
       ]);
       r1.results?.forEach(i => addItem(i, '古装'));
       r2.results?.forEach(i => addItem(i, '穿越'));
       r3.results?.forEach(i => addItem(i, '重生'));
     } else if (category === 'comedy') {
       const [r1, r2] = await Promise.all([
-        browseList({ category: 'real-drama', genre: 'comedy', page: 1 }).catch(() => ({ results: [] })),
-        searchHongguo('喜剧', { page: 1 }).catch(() => ({ results: [] }))
+        browseList({ category: 'real-drama', genre: 'comedy', page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('喜剧', { page: pg }).catch(() => ({ results: [] }))
       ]);
       r1.results?.forEach(i => addItem(i, '喜剧'));
       r2.results?.forEach(i => addItem(i, '搞笑'));
     } else if (category === 'family') {
       const [r1, r2] = await Promise.all([
-        browseList({ category: 'real-drama', genre: 'family', page: 1 }).catch(() => ({ results: [] })),
-        searchHongguo('家庭', { page: 1 }).catch(() => ({ results: [] }))
+        browseList({ category: 'real-drama', genre: 'family', page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('家庭', { page: pg }).catch(() => ({ results: [] }))
       ]);
       r1.results?.forEach(i => addItem(i, '家庭'));
       r2.results?.forEach(i => addItem(i, '婚姻'));
     } else if (category === 'suspense') {
       const [r1, r2] = await Promise.all([
-        browseList({ category: 'real-drama', genre: 'suspense', page: 1 }).catch(() => ({ results: [] })),
-        searchHongguo('悬疑', { page: 1 }).catch(() => ({ results: [] }))
+        browseList({ category: 'real-drama', genre: 'suspense', page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('悬疑', { page: pg }).catch(() => ({ results: [] }))
       ]);
       r1.results?.forEach(i => addItem(i, '悬疑'));
       r2.results?.forEach(i => addItem(i, '惊悚'));
     }
   } catch (err) {
-    console.error(`[Category ${category}] Error:`, err.message);
+    console.error(`[Category ${category} p${pg}] Error:`, err.message);
   }
 
-  categoryCache.set(category, { timestamp: Date.now(), dramas: list });
-  console.log(`[Category ${category}] ទទួលបានរឿងចំនួន ${list.length} រឿង`);
+  categoryCache.set(cacheKey, { timestamp: Date.now(), dramas: list });
+  console.log(`[Category ${category} (Page ${pg})] ទទួលបានរឿងចំនួន ${list.length} រឿង`);
   return list;
 }
 
@@ -1016,6 +1051,8 @@ const HTML_CONTENT = `<!DOCTYPE html>
     let pageSize = 20;
     let displayedCount = 0;
     let currentVisibleDramas = [];
+    let categoryPageMap = {}; // cat -> current page index from server
+    let isLoadingMore = false;
 
     function handleCoverError(img) {
       img.onerror = null;
@@ -1028,9 +1065,10 @@ const HTML_CONTENT = `<!DOCTYPE html>
       loadDrama(d.id, d.title, d.cover, d.total || 80, d.titleKhmer || d.title);
     }
 
-      async function switchCategory(cat) {
+    async function switchCategory(cat) {
       currentCategory = cat;
       displayedCount = 0;
+      if (!categoryPageMap[cat]) categoryPageMap[cat] = 1;
       document.querySelectorAll('.cat-tab').forEach(t => {
         t.classList.toggle('active', t.getAttribute('data-cat') === cat);
       });
@@ -1052,9 +1090,10 @@ const HTML_CONTENT = `<!DOCTYPE html>
         return;
       }
 
+      categoryPageMap[cat] = 1;
       container.innerHTML = '<div style="color: #718096; padding: 30px; text-align: center;">⏳ កំពុងទាញយកទិន្នន័យ...</div>';
       try {
-        const query = '/api/catalog?category=' + cat + (force ? '&refresh=1' : '');
+        const query = '/api/catalog?category=' + cat + '&page=1' + (force ? '&refresh=1' : '');
         const res = await fetch(query);
         const data = await res.json();
         allCurrentDramas = data.dramas || [];
@@ -1068,13 +1107,62 @@ const HTML_CONTENT = `<!DOCTYPE html>
 
     async function reloadCurrentCategory(force = true) {
       document.getElementById('refreshBtnText').innerText = 'កំពុងទាញ...';
+      categoryPageMap[currentCategory] = 1;
       await loadCategoryDramas(currentCategory, force);
       document.getElementById('refreshBtnText').innerText = '🔄 Refresh';
     }
 
-    function loadMoreDramas() {
-      displayedCount = Math.min(displayedCount + 20, allCurrentDramas.length);
-      renderLibraryCards(allCurrentDramas);
+    async function loadMoreDramas() {
+      if (isLoadingMore) return;
+
+      // 1. If we still have unrevealed dramas already stored in memory:
+      if (displayedCount < allCurrentDramas.length) {
+        displayedCount = Math.min(displayedCount + 20, allCurrentDramas.length);
+        renderLibraryCards(allCurrentDramas);
+        return;
+      }
+
+      // 2. If user reached the end of current list, fetch more from server endlessly!
+      isLoadingMore = true;
+      const btn = document.getElementById('btnLoadMoreDramas');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span>⏳ កំពុងទាញយករឿងថ្មីៗបន្ថែម...</span>';
+      }
+
+      try {
+        categoryPageMap[currentCategory] = (categoryPageMap[currentCategory] || 1) + 1;
+        const nextPage = categoryPageMap[currentCategory];
+        const res = await fetch('/api/catalog?category=' + currentCategory + '&page=' + nextPage);
+        const data = await res.json();
+        const newDramas = data.dramas || [];
+
+        if (newDramas.length > 0) {
+          const existingIds = new Set(allCurrentDramas.map(d => d.id));
+          const fresh = newDramas.filter(d => !existingIds.has(d.id));
+          if (fresh.length > 0) {
+            allCurrentDramas = allCurrentDramas.concat(fresh);
+            categoryDramasMap[currentCategory] = allCurrentDramas;
+            displayedCount = Math.min(displayedCount + 20, allCurrentDramas.length);
+          } else {
+            // If page had duplicate results, try one page further
+            categoryPageMap[currentCategory] = nextPage + 1;
+            const res2 = await fetch('/api/catalog?category=' + currentCategory + '&page=' + (nextPage + 1));
+            const data2 = await res2.json();
+            const fresh2 = (data2.dramas || []).filter(d => !existingIds.has(d.id));
+            if (fresh2.length > 0) {
+              allCurrentDramas = allCurrentDramas.concat(fresh2);
+              categoryDramasMap[currentCategory] = allCurrentDramas;
+              displayedCount = Math.min(displayedCount + 20, allCurrentDramas.length);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load more:', err);
+      } finally {
+        isLoadingMore = false;
+        renderLibraryCards(allCurrentDramas);
+      }
     }
 
     function renderLibraryCards(dramas) {
@@ -1092,7 +1180,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
       currentVisibleDramas = visible;
 
       const statsEl = document.getElementById('categoryStats');
-      if (statsEl) statsEl.innerText = visible.length + '/' + dramas.length + ' រឿង';
+      if (statsEl) statsEl.innerText = visible.length + '/' + dramas.length + '+ រឿង';
 
       const badgeMap = {
         sad: ['badge-sad', '😭 កម្សត់'],
@@ -1138,12 +1226,16 @@ const HTML_CONTENT = `<!DOCTYPE html>
           '</div>';
       }).join('');
 
-      // Add "Load More / មើលបន្ថែម" Button if there are remaining dramas
-      if (!q && visible.length < dramas.length) {
-        const remaining = dramas.length - visible.length;
+      // Continuous Endless "Load More" Button: Never runs out!
+      if (!q) {
+        const remainingInMemory = dramas.length - visible.length;
+        const btnText = remainingInMemory > 0
+          ? '➕ មើលរឿងបន្ថែម (នៅសល់ ' + remainingInMemory + ' រឿងក្នុងបញ្ជី)'
+          : '➕ ផ្ទុករឿងថ្មីៗបន្ថែមទៀត (ទាញយកបន្ត...)';
+
         cardsHtml += '<div style="padding: 14px 10px; text-align: center;">' +
-            '<button onclick="loadMoreDramas()" style="width: 100%; background: linear-gradient(135deg, #1e3a8a, #2563eb); border: 1px solid #3b82f6; color: #fff; font-size: 13px; font-weight: bold; padding: 10px 16px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s; font-family: inherit;">' +
-              '<span>➕ មើលរឿងបន្ថែម (នៅសល់ ' + remaining + ' រឿងទៀត)</span>' +
+            '<button id="btnLoadMoreDramas" onclick="loadMoreDramas()" style="width: 100%; background: linear-gradient(135deg, #1e3a8a, #2563eb); border: 1px solid #3b82f6; color: #fff; font-size: 13px; font-weight: bold; padding: 10px 16px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s; font-family: inherit;">' +
+              '<span>' + btnText + '</span>' +
             '</button>' +
           '</div>';
       }
@@ -1757,16 +1849,12 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/catalog') {
     const category = url.searchParams.get('category') || 'trending';
     const force = url.searchParams.get('refresh') === '1';
-    let dramas = [];
-    if (category === 'trending') {
-      if (force || cachedTrendingDramas.length === 0) await refreshTrendingDramas();
-      dramas = cachedTrendingDramas;
-    } else {
-      dramas = await fetchCategoryDramas(category, force);
-    }
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+    const dramas = await fetchCategoryDramas(category, page, force);
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     return res.end(JSON.stringify({
       category,
+      page,
       count: dramas.length,
       dramas,
       nextRefreshIn: Math.max(0, Math.round((nextRefreshTimestamp - Date.now()) / 1000))
