@@ -1597,11 +1597,18 @@ const HTML_CONTENT = `<!DOCTYPE html>
 
     window.onload = async () => {
       checkKeyStatus();
-      await loadCategoryDramas('trending');
-      // Auto-load the #1 top trending drama smoothly on initial launch
+      try {
+        await loadCategoryDramas('trending');
+      } catch (e) {
+        console.error('Error loading trending:', e);
+      }
       if (allCurrentDramas && allCurrentDramas.length > 0) {
         const top1 = allCurrentDramas[0];
-        loadDrama(top1.id, top1.title, top1.cover, top1.total, top1.titleKhmer);
+        try {
+          loadDrama(top1.id, top1.title, top1.cover, top1.total, top1.titleKhmer);
+        } catch (e) {
+          console.error('Error loading top drama:', e);
+        }
       }
     };
   </script>
