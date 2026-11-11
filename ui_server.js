@@ -195,13 +195,14 @@ async function refreshTrendingDramas() {
           for (const item of parsed.rankList) {
             if (item.seriesId && !seen.has(item.seriesId)) {
               seen.add(item.seriesId);
+              const totalEps = Number(item.episodeCount || item.episode_count) || 80;
               allDramas.push({
                 id: String(item.seriesId),
                 title: String(item.title || 'Drama'),
                 titleKhmer: getKhmerTitle(item.title),
                 cover: item.cover || '',
                 heat: item.heatText || '',
-                total: 80,
+                total: totalEps,
                 rank: allDramas.length + 1,
                 tags: Array.isArray(item.tags) ? item.tags.slice(0, 3) : ['热门', '短剧']
               });
@@ -1172,32 +1173,45 @@ const HTML_CONTENT = `<!DOCTYPE html>
     }
 
     async function loadDrama(id, title, cover, total, titleKhmer) {
-      currentDrama = { seriesId: id, title, cover, total: total || 80, titleKhmer };
+      let totalEps = Number(total) || 0;
+      currentDrama = { seriesId: id, title, cover, total: totalEps || 80, titleKhmer };
       document.getElementById('bannerTitle').innerText = title;
       document.getElementById('bannerKhmer').innerText = titleKhmer || title;
       document.getElementById('bannerCover').src = cover;
       document.getElementById('bannerId').innerText = 'Series ID: ' + id;
-      document.getElementById('bannerTotal').innerText = 'សរុប: ' + (total || 80) + ' ភាគ';
-      document.getElementById('btnDownloadAll').innerText = \`🚀 ទាញយកគ្រប់ភាគទាំងអស់ (ភាគ 1 ដល់ \${total || 80})\`;
+      document.getElementById('bannerTotal').innerText = totalEps ? ('សរុប: ' + totalEps + ' ភាគ') : 'កំពុងផ្ទុកចំនួនភាគ...';
+      document.getElementById('btnDownloadAll').innerText = '🚀 ទាញយកគ្រប់ភាគទាំងអស់' + (totalEps ? ' (ភាគ 1 ដល់ ' + totalEps + ')' : '');
 
       // Auto-translate banner Khmer title with Gemini in background
       autoGeminiTranslateTitle(title);
+
+      // Dynamically fetch exact episode count & details from server
+      try {
+        fetch('/api/scanned-episodes?seriesId=' + id).then(r => r.json()).then(data => {
+          if (data && data.total && data.total > 0 && data.total !== totalEps) {
+            totalEps = data.total;
+            currentDrama.total = totalEps;
+            document.getElementById('bannerTotal').innerText = 'សរុប: ' + totalEps + ' ភាគ';
+            document.getElementById('btnDownloadAll').innerText = '🚀 ទាញយកគ្រប់ភាគទាំងអស់ (ភាគ 1 ដល់ ' + totalEps + ')';
+            // Re-initialize episodes
+            episodeStates = {};
+            for (let i = 1; i <= totalEps; i++) episodeStates[i] = 'pending';
+            if (data.downloaded && data.downloaded.length > 0) {
+              data.downloaded.forEach(ep => { episodeStates[ep] = 'done'; });
+            }
+            renderEpisodesGrid();
+          } else if (data && data.downloaded && data.downloaded.length > 0) {
+            data.downloaded.forEach(ep => { episodeStates[ep] = 'done'; });
+            renderEpisodesGrid();
+          }
+        }).catch(() => {});
+      } catch (_) {}
 
       episodeStates = {};
       for (let i = 1; i <= currentDrama.total; i++) {
         episodeStates[i] = 'pending';
       }
       renderEpisodesGrid();
-
-      // Check existing files on disk
-      try {
-        const res = await fetch('/api/scanned-episodes?seriesId=' + id);
-        const data = await res.json();
-        if (data && data.downloaded && data.downloaded.length > 0) {
-          data.downloaded.forEach(ep => { episodeStates[ep] = 'done'; });
-          renderEpisodesGrid();
-        }
-      } catch (_) {}
     }
 
     let activeEventSource = null;
@@ -1726,11 +1740,16 @@ const server = http.createServer(async (req, res) => {
           }
         });
       }
+      const actualTotal = Array.isArray(info.episodes) ? info.episodes.length : 0;
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ downloaded }));
+      return res.end(JSON.stringify({
+        total: actualTotal,
+        title: info.series_title,
+        downloaded
+      }));
     } catch (_) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ downloaded: [] }));
+      return res.end(JSON.stringify({ total: 0, downloaded: [] }));
     }
   }
 
