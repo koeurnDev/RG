@@ -811,7 +811,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
 
     <div class="search-bar">
       <button class="btn-paste" onclick="pasteClipboard()">📋 Paste</button>
-      <input type="text" id="globalSearchInput" class="search-input" placeholder="វាយឈ្មោះរឿង (ឧ. 装穷提亲) ឬ Series ID ឬ Link..." value="7701328280862854168">
+      <input type="text" id="globalSearchInput" class="search-input" placeholder="វាយឈ្មោះរឿង (ឧ. 总裁) ឬ Series ID ឬ Link...">
       <button class="search-btn" onclick="handleSearch()">🔍 ស្វែងរក</button>
     </div>
 
@@ -871,16 +871,16 @@ const HTML_CONTENT = `<!DOCTYPE html>
     <div class="main-panel">
 
       <!-- Drama Details -->
-      <div class="drama-banner">
-        <img id="bannerCover" class="banner-cover" src="https://p6-novel.byteimg.com/novel-pic/dd47bf8f4357b931ef542a2f91478aed~tplv-shrink:640:0.image">
+      <div class="drama-banner" id="mainBanner" style="display: none;">
+        <img id="bannerCover" class="banner-cover" src="">
         <div class="banner-details">
           <div>
-            <h1 id="bannerTitle" class="banner-title">装穷提亲，娶到全家嫌弃的她</h1>
-            <p id="bannerKhmer" class="banner-subtitle">បន្លំធ្វើជាអ្នកក្រទៅស្តីដណ្តឹង រៀបការជាមួយនារីដែលគ្រួសារមើលងាយ</p>
+            <h1 id="bannerTitle" class="banner-title"></h1>
+            <p id="bannerKhmer" class="banner-subtitle"></p>
             <div class="banner-meta">
-              <span id="bannerId">Series ID: 7701328280862854168</span>
+              <span id="bannerId"></span>
               <span>•</span>
-              <span id="bannerTotal">សរុប: 80 ភាគ</span>
+              <span id="bannerTotal"></span>
               <span>•</span>
               <span style="color: #68d391; font-weight: bold;">កម្រិត 1080p Full HD</span>
             </div>
@@ -917,7 +917,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
           <!-- The Giant Download Action Buttons -->
           <div class="download-bar">
             <button id="btnDownloadAll" class="btn-download-giant" onclick="downloadAllEpisodes()">
-              🚀 ទាញយកគ្រប់ភាគទាំងអស់ (ភាគ 1 ដល់ 80)
+              🚀 ទាញយកគ្រប់ភាគទាំងអស់
             </button>
             <button class="btn-test-ep" onclick="downloadSingleEpisode(2)">
               ⚡ សាកល្បងទាញយកភាគ ២ ឥឡូវនេះ
@@ -931,6 +931,13 @@ const HTML_CONTENT = `<!DOCTYPE html>
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- Placeholder before any drama is selected -->
+      <div id="noDramaPlaceholder" style="background: var(--bg-card); border: 2px dashed #233347; border-radius: 12px; padding: 60px 30px; text-align: center; color: #a0aec0; margin-bottom: 24px;">
+        <div style="font-size: 48px; margin-bottom: 12px;">👈 🎬</div>
+        <div style="font-size: 18px; font-weight: bold; color: #fff; margin-bottom: 8px;">សូមជ្រើសរើសរឿងភាគពីបញ្ជីខាងឆ្វេង ឬស្វែងរកខាងលើ</div>
+        <div style="font-size: 13px; color: #718096;">ចុចលើរឿងណាមួយក្នុងប្រភេទ (🔥 កំពុងល្បី, 😭 កម្សត់, 💖 Sweet, 👑 CEO...) ដើម្បីផ្ទុកព័ត៌មាន និងទាញយក</div>
       </div>
 
       <!-- Live Progress Card (Visible when downloading) -->
@@ -953,7 +960,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
       </div>
 
       <!-- Episodes Section -->
-      <div class="episodes-section">
+      <div class="episodes-section" id="episodesSection" style="display: none;">
         <div class="ep-header">
           <div>
             <div class="ep-title">📋 បញ្ជីភាគរឿង (ចុចលើភាគណា ទាញយកភាគនោះភ្លាមៗ)</div>
@@ -974,13 +981,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
   </div>
 
   <script>
-    let currentDrama = {
-      seriesId: '7701328280862854168',
-      title: '装穷提亲，娶到全家嫌弃的她',
-      titleKhmer: 'បន្លំធ្វើជាអ្នកក្រទៅស្តីដណ្តឹង រៀបការជាមួយនារីដែលគ្រួសារមើលងាយ',
-      cover: 'https://p6-novel.byteimg.com/novel-pic/dd47bf8f4357b931ef542a2f91478aed~tplv-shrink:640:0.image',
-      total: 80
-    };
+    let currentDrama = null;
     let episodeStates = {}; // epNum -> 'done' | 'downloading' | 'pending' | 'unselected'
     let isDownloading = false;
     let currentCategory = 'trending';
@@ -1175,6 +1176,15 @@ const HTML_CONTENT = `<!DOCTYPE html>
     async function loadDrama(id, title, cover, total, titleKhmer) {
       let totalEps = Number(total) || 0;
       currentDrama = { seriesId: id, title, cover, total: totalEps || 80, titleKhmer };
+
+      // Reveal main panel sections
+      const placeholder = document.getElementById('noDramaPlaceholder');
+      if (placeholder) placeholder.style.display = 'none';
+      const banner = document.getElementById('mainBanner');
+      if (banner) banner.style.display = 'flex';
+      const epSection = document.getElementById('episodesSection');
+      if (epSection) epSection.style.display = 'block';
+
       document.getElementById('bannerTitle').innerText = title;
       document.getElementById('bannerKhmer').innerText = titleKhmer || title;
       document.getElementById('bannerCover').src = cover;
@@ -1562,7 +1572,6 @@ const HTML_CONTENT = `<!DOCTYPE html>
     window.onload = () => {
       checkKeyStatus();
       loadCategoryDramas('trending');
-      loadDrama(currentDrama.seriesId, currentDrama.title, currentDrama.cover, currentDrama.total, currentDrama.titleKhmer);
     };
   </script>
 
