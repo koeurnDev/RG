@@ -203,6 +203,7 @@ async function runBatchDownload(job) {
 
         let success = false;
         for (const u of urls) {
+          if (job.cancelled) break;
           try {
             broadcastProgress({ type: 'episode', epNum, status: 'downloading', percent: 45 });
             execSync(`curl.exe -s -L --connect-timeout 8 -m 120 "${u}" -o "${tempEncrypted}"`);
@@ -211,6 +212,11 @@ async function runBatchDownload(job) {
               break;
             }
           } catch (_) {}
+        }
+
+        if (job.cancelled) {
+          if (fs.existsSync(tempEncrypted)) try { fs.unlinkSync(tempEncrypted); } catch (_) {}
+          return;
         }
 
         if (!success) {
@@ -627,10 +633,31 @@ const HTML_CONTENT = `<!DOCTYPE html>
       }).catch(() => {});
     }
 
+    let activeEventSource = null;
+
     function connectSSE() {
-      const evtSource = new EventSource('/api/progress');
-      evtSource.onmessage = (event) => {
+      if (activeEventSource) {
+        try { activeEventSource.close(); } catch (_) {}
+      }
+      activeEventSource = new EventSource('/api/progress');
+      activeEventSource.onmessage = (event) => {
         const data = JSON.parse(event.data);
+        if (data.status === 'cancelled') {
+          if (activeEventSource) {
+            try { activeEventSource.close(); } catch (_) {}
+            activeEventSource = null;
+          }
+          isDownloading = false;
+          document.getElementById('liveStatusText').innerText = '🛑 បានផ្អាកការទាញយកដោយជោគជ័យ';
+          document.getElementById('btnDownloadAll').innerText = '🚀 បន្តទាញយកគ្រប់ភាគទាំងអស់';
+          document.getElementById('btnDownloadAll').disabled = false;
+          for (let ep = 1; ep <= currentDrama.total; ep++) {
+            if (episodeStates[ep] === 'downloading') episodeStates[ep] = 'pending';
+          }
+          renderEpisodesGrid();
+          return;
+        }
+
         if (data.type === 'episode') {
           episodeStates[data.epNum] = data.status;
           const pill = document.getElementById('pill_ep_' + data.epNum);
@@ -648,10 +675,14 @@ const HTML_CONTENT = `<!DOCTYPE html>
             document.getElementById('livePercentText').innerText = data.progress + '%';
           }
         }
-        if (data.status === 'done' || data.status === 'cancelled') {
+        if (data.status === 'done') {
           isDownloading = false;
           document.getElementById('btnDownloadAll').innerText = '🚀 ទាញយកគ្រប់ភាគទាំងអស់';
           document.getElementById('btnDownloadAll').disabled = false;
+          if (activeEventSource) {
+            try { activeEventSource.close(); } catch (_) {}
+            activeEventSource = null;
+          }
         }
       };
     }
@@ -689,10 +720,24 @@ const HTML_CONTENT = `<!DOCTYPE html>
     }
 
     async function stopDownload() {
-      await fetch('/api/stop-download', { method: 'POST' });
-      document.getElementById('liveStatusText').innerText = 'បានផ្អាកការទាញយក';
+      document.getElementById('liveStatusText').innerText = '⏳ កំពុងផ្អាក...';
+      if (activeEventSource) {
+        try { activeEventSource.close(); } catch (_) {}
+        activeEventSource = null;
+      }
       isDownloading = false;
+      document.getElementById('btnDownloadAll').innerText = '🚀 បន្តទាញយកគ្រប់ភាគទាំងអស់';
       document.getElementById('btnDownloadAll').disabled = false;
+
+      for (let ep = 1; ep <= currentDrama.total; ep++) {
+        if (episodeStates[ep] === 'downloading') {
+          episodeStates[ep] = 'pending';
+        }
+      }
+      renderEpisodesGrid();
+
+      await fetch('/api/stop-download', { method: 'POST' });
+      document.getElementById('liveStatusText').innerText = '🛑 បានផ្អាកការទាញយកដោយជោគជ័យ';
     }
 
     function openFolder() {
@@ -839,7 +884,11 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/api/stop-download' && req.method === 'POST') {
     if (currentDownloadJob) currentDownloadJob.cancelled = true;
-    broadcastProgress({ type: 'global', status: 'cancelled', message: 'ការទាញយកត្រូវបានផ្អាក' });
+    try {
+      exec('taskkill /F /IM curl.exe /T', () => {});
+      exec('taskkill /F /IM ffmpeg.exe /T', () => {});
+    } catch (_) {}
+    broadcastProgress({ type: 'global', status: 'cancelled', message: '🛑 បានផ្អាកការទាញយកដោយជោគជ័យ' });
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ success: true }));
   }
