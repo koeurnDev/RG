@@ -74,29 +74,74 @@ function saveEnvFile(filePath, updates) {
 function loadConfig() {
   // Priority: .env file → config.json → process.env
   const envData = parseEnvFile(ENV_FILE);
-  let cfg = { GEMINI_API_KEY: envData.GEMINI_API_KEY || process.env.GEMINI_API_KEY || '' };
+  let cfg = {
+    GEMINI_API_KEY: envData.GEMINI_API_KEY || process.env.GEMINI_API_KEY || '',
+    DOWNLOAD_DIR: envData.DOWNLOAD_DIR || 'D:\\HDRG'
+  };
   try {
     if (fs.existsSync(CONFIG_FILE)) {
       const parsed = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-      // .env takes priority over config.json
       if (!cfg.GEMINI_API_KEY && parsed.GEMINI_API_KEY) cfg.GEMINI_API_KEY = parsed.GEMINI_API_KEY;
+      if (parsed.DOWNLOAD_DIR) cfg.DOWNLOAD_DIR = parsed.DOWNLOAD_DIR;
     }
   } catch (_) {}
   return cfg;
 }
 
+function getDownloadDir() {
+  const cfg = loadConfig();
+  const dir = cfg.DOWNLOAD_DIR || 'D:\\HDRG';
+  try {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  } catch (_) {}
+  return dir;
+}
+
 function saveConfig(cfg) {
-  // Save to both .env AND config.json for compatibility
-  if (cfg.GEMINI_API_KEY) {
-    saveEnvFile(ENV_FILE, { GEMINI_API_KEY: cfg.GEMINI_API_KEY });
-  }
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
+  const current = loadConfig();
+  const merged = { ...current, ...cfg };
+  saveEnvFile(ENV_FILE, {
+    GEMINI_API_KEY: merged.GEMINI_API_KEY || '',
+    DOWNLOAD_DIR: merged.DOWNLOAD_DIR || 'D:\\HDRG'
+  });
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(merged, null, 2), 'utf8');
   try {
     const ezargDir = 'D:\\EZARG';
     if (fs.existsSync(ezargDir)) {
-      fs.writeFileSync(path.join(ezargDir, 'config.json'), JSON.stringify(cfg, null, 2), 'utf8');
+      fs.writeFileSync(path.join(ezargDir, 'config.json'), JSON.stringify(merged, null, 2), 'utf8');
     }
   } catch (_) {}
+}
+
+function promptFolderPicker(initialPath = 'D:\\HDRG') {
+  return new Promise((resolve) => {
+    const psScript = `
+      Add-Type -AssemblyName System.Windows.Forms
+      $f = New-Object System.Windows.Forms.FolderBrowserDialog
+      $f.Description = "ជ្រើសរើស Folder សម្រាប់រក្សាទុកវីដេអូ HDRG"
+      $f.SelectedPath = "${initialPath.replace(/\\/g, '\\\\')}"
+      $f.ShowNewFolderButton = $true
+      $top = New-Object System.Windows.Forms.Form
+      $top.TopMost = $true
+      $top.StartPosition = "Manual"
+      $top.Location = New-Object System.Drawing.Point(-2000, -2000)
+      $top.Show()
+      $res = $f.ShowDialog($top)
+      $top.Close()
+      if ($res -eq [System.Windows.Forms.DialogResult]::OK) {
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        Write-Output $f.SelectedPath
+      }
+    `;
+    const b64 = Buffer.from(psScript, 'utf16le').toString('base64');
+    const child = spawn('powershell.exe', ['-NoProfile', '-EncodedCommand', b64]);
+    let stdout = '';
+    child.stdout.on('data', d => stdout += d.toString('utf8'));
+    child.on('close', () => {
+      resolve(stdout.trim() || null);
+    });
+    child.on('error', () => resolve(null));
+  });
 }
 
 // Multi-Category Drama Engine & 10-Minute Auto-Refresh
@@ -504,7 +549,7 @@ async function runBatchDownload(job) {
     broadcastProgress({ type: 'global', status: 'info', message: 'កំពុងទាញយកព័ត៌មានភាគរឿង...', progress: 5 });
     const info = await fetchEpisodeListSafe(seriesId);
     const cleanTitle = (info.series_title || 'Drama_' + seriesId).replace(/[\\/:*?"<>|]/g, '_');
-    const outputDir = path.join('D:\\HDRG', cleanTitle);
+    const outputDir = path.join(getDownloadDir(), cleanTitle);
     if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
     const totalEps = info.episodes.length;
@@ -757,7 +802,7 @@ async function runBatchDownload(job) {
       status: 'done',
       progress: 100,
       outputDir,
-      message: `🎉 ជោគជ័យ ១០០%! បានទាញយកចប់សព្វគ្រប់ចំនួន ${downloadedFiles.length} ភាគ! រក្សាទុកក្នុង D:\\HDRG`
+      message: `🎉 ជោគជ័យ ១០០%! បានទាញយកចប់សព្វគ្រប់ចំនួន ${downloadedFiles.length} ភាគ! រក្សាទុកក្នុង ${outputDir}`
     });
 
   } catch (err) {
@@ -884,6 +929,16 @@ const HTML_CONTENT = `<!DOCTYPE html>
     .speed-pill.active { background: linear-gradient(135deg, #2b6cb0, #3182ce); color: #fff; border-color: #63b3ed; box-shadow: 0 0 10px rgba(49, 130, 206, 0.4); }
     .speed-pill.turbo.active { background: linear-gradient(135deg, #c53030, #dd6b20); border-color: #f6ad55; box-shadow: 0 0 14px rgba(221, 107, 32, 0.6); }
 
+    /* Save Path Bar & Folder Customizer */
+    .save-path-bar { background: #0c1017; border: 1px solid #233347; border-radius: 8px; padding: 8px 14px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+    .path-badge { background: #1a2738; color: #63b3ed; padding: 3px 10px; border-radius: 5px; font-family: monospace; font-size: 13px; font-weight: 600; border: 1px solid #2b6cb0; word-break: break-all; }
+    .btn-mini-action { background: #141c2b; border: 1px solid #2d3748; color: #cbd5e0; padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+    .btn-mini-action:hover { background: #1e293b; color: #fff; border-color: #4a5568; }
+    .btn-browse-folder { background: linear-gradient(135deg, #2b6cb0, #3182ce); color: #fff; border: 1px solid #63b3ed; padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px; white-space: nowrap; transition: 0.2s; }
+    .btn-browse-folder:hover { background: linear-gradient(135deg, #3182ce, #4299e1); transform: translateY(-1px); }
+    .preset-pill { background: #141c2b; border: 1px solid #233347; color: #a0aec0; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+    .preset-pill:hover { background: #1e293b; color: #63b3ed; border-color: #3182ce; }
+
     /* Live Progress Card (Visible when downloading) */
     .progress-card { background: #131d2a; border: 1.5px solid #38a169; border-radius: 14px; padding: 18px 22px; display: none; box-shadow: 0 8px 25px rgba(0,0,0,0.5); }
     .progress-bar-bg { width: 100%; height: 16px; background: #0c1017; border-radius: 8px; overflow: hidden; margin: 12px 0 8px 0; border: 1px solid var(--border); box-shadow: inset 0 2px 4px rgba(0,0,0,0.6); }
@@ -935,6 +990,9 @@ const HTML_CONTENT = `<!DOCTYPE html>
     </div>
 
     <div class="top-actions">
+      <button class="btn-folder" onclick="openFolderModal()" id="topFolderBtn" style="border-color: #38a169; color: #9ae6b4; display: flex; align-items: center; gap: 6px;" title="ចុចដើម្បីផ្លាស់ប្តូរទីតាំងរក្សាទុក">
+        📁 <span id="topFolderLabel">D:\HDRG</span>
+      </button>
       <button class="btn-folder" onclick="openKeyModal()" style="border-color: #3182ce; color: #63b3ed; display: flex; align-items: center; gap: 6px;">
         <span id="keyStatusDot">⚪</span> 🔑 Gemini Key
       </button>
@@ -942,7 +1000,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
         <span id="dlToolIcon">⬇️</span> <span id="dlToolLabel">ទាញយក Tool</span>
         <span id="dlToolProgress" style="display:none; position:absolute; bottom:0; left:0; height:3px; background:#48bb78; width:0%; transition:width 0.3s;"></span>
       </button>
-      <button class="btn-folder" id="openFolderBtn" onclick="openFolder()">📂 បើក Folder វីដេអូ</button>
+      <button class="btn-folder" id="openFolderBtn" onclick="openFolder()">📂 បើក Folder</button>
     </div>
   </div>
 
@@ -1030,6 +1088,18 @@ const HTML_CONTENT = `<!DOCTYPE html>
                   style="position:absolute; top:4px; right:6px; background:none; border:none;
                   color:#718096; cursor:pointer; font-size:14px;">✕</button>
               </div>
+            </div>
+          </div>
+
+          <!-- Save Location Quick Bar -->
+          <div class="save-path-bar">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 13px; color: #94a3b8; font-weight: 600;">📁 ទីតាំងរក្សាទុក:</span>
+              <span id="bannerSavePathText" class="path-badge">D:\HDRG</span>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <button type="button" class="btn-mini-action" onclick="openFolderModal()">⚙️ រើសទីតាំងថ្មី (Change)</button>
+              <button type="button" class="btn-mini-action" onclick="openFolder()">📂 បើកមើល Folder</button>
             </div>
           </div>
 
@@ -1933,8 +2003,133 @@ const HTML_CONTENT = `<!DOCTYPE html>
       } catch (_) {}
     }
 
+    let currentDownloadDir = 'D:\\HDRG';
+
+    function loadDownloadDir() {
+      fetch('/api/download-dir').then(r => r.json()).then(data => {
+        if (data && data.path) {
+          updateDownloadDirUI(data.path);
+        }
+      }).catch(() => {});
+    }
+
+    function updateDownloadDirUI(p) {
+      currentDownloadDir = p;
+      const topLabel = document.getElementById('topFolderLabel');
+      if (topLabel) topLabel.innerText = p.length > 20 ? p.slice(0, 10) + '...' + p.slice(-10) : p;
+      const bannerPath = document.getElementById('bannerSavePathText');
+      if (bannerPath) bannerPath.innerText = p;
+      const input = document.getElementById('folderPathInput');
+      if (input) input.value = p;
+    }
+
+    function openFolderModal() {
+      const modal = document.getElementById('folderModal');
+      if (modal) {
+        modal.style.display = 'flex';
+        const input = document.getElementById('folderPathInput');
+        if (input) input.value = currentDownloadDir;
+        const box = document.getElementById('folderStatusBox');
+        if (box) box.style.display = 'none';
+      }
+    }
+
+    function closeFolderModal() {
+      const modal = document.getElementById('folderModal');
+      if (modal) modal.style.display = 'none';
+    }
+
+    function setPresetById(id) {
+      const presets = {
+        1: 'D:\\HDRG',
+        2: 'D:\\Videos',
+        3: 'C:\\Users\\ASUS\\Downloads\\HDRG',
+        4: 'C:\\Users\\ASUS\\Desktop\\HDRG'
+      };
+      const input = document.getElementById('folderPathInput');
+      if (input && presets[id]) input.value = presets[id];
+    }
+
+    async function browseFolderNative() {
+      const box = document.getElementById('folderStatusBox');
+      if (box) {
+        box.style.display = 'block';
+        box.style.background = 'rgba(49, 130, 206, 0.2)';
+        box.style.color = '#90cdf4';
+        box.style.border = '1px solid #3182ce';
+        box.innerText = '📂 កំពុងបើកផ្ទាំងជ្រើសរើស Folder លើ Windows... សូមមើលលើ Screen កុំព្យូទ័ររបស់អ្នក!';
+      }
+      try {
+        const res = await fetch('/api/browse-folder', { method: 'POST' });
+        const data = await res.json();
+        if (data.success && data.path) {
+          updateDownloadDirUI(data.path);
+          if (box) {
+            box.style.background = 'rgba(72, 187, 120, 0.2)';
+            box.style.color = '#9ae6b4';
+            box.style.border = '1px solid #48bb78';
+            box.innerText = '✅ បានជ្រើសរើស Folder៖ ' + data.path + ' (បានរក្សាទុកដោយជោគជ័យ)!';
+          }
+        } else if (data.cancelled) {
+          if (box) box.style.display = 'none';
+        } else if (data.error) {
+          if (box) {
+            box.style.background = 'rgba(229, 62, 62, 0.2)';
+            box.style.color = '#feb2b2';
+            box.style.border = '1px solid #e53e3e';
+            box.innerText = 'កំហុស: ' + data.error;
+          }
+        }
+      } catch (err) {
+        if (box) {
+          box.style.background = 'rgba(229, 62, 62, 0.2)';
+          box.style.color = '#feb2b2';
+          box.style.border = '1px solid #e53e3e';
+          box.innerText = 'កំហុស: ' + err.message;
+        }
+      }
+    }
+
+    async function saveFolderPath() {
+      const input = document.getElementById('folderPathInput');
+      const newPath = input ? input.value.trim() : '';
+      if (!newPath) return alert('សូមបញ្ចូលទីតាំង Folder!');
+      const box = document.getElementById('folderStatusBox');
+      try {
+        const res = await fetch('/api/download-dir', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: newPath })
+        });
+        const data = await res.json();
+        if (data.success && data.path) {
+          updateDownloadDirUI(data.path);
+          if (box) {
+            box.style.display = 'block';
+            box.style.background = 'rgba(72, 187, 120, 0.2)';
+            box.style.color = '#9ae6b4';
+            box.style.border = '1px solid #48bb78';
+            box.innerText = '✅ បានរក្សាទុកទីតាំង Folder ដោយជោគជ័យ៖ ' + data.path;
+          }
+          setTimeout(closeFolderModal, 1200);
+        } else {
+          alert('កំហុស៖ ' + (data.error || 'មិនអាចរក្សាទុកទីតាំងបាន'));
+        }
+      } catch (err) {
+        alert('កំហុស៖ ' + err.message);
+      }
+    }
+
+    window.onclick = function(event) {
+      const kModal = document.getElementById('keyModal');
+      if (event.target === kModal) closeKeyModal();
+      const fModal = document.getElementById('folderModal');
+      if (event.target === fModal) closeFolderModal();
+    };
+
     window.onload = async () => {
       checkKeyStatus();
+      loadDownloadDir();
       try {
         await loadCategoryDramas('trending');
       } catch (e) {
@@ -1950,6 +2145,55 @@ const HTML_CONTENT = `<!DOCTYPE html>
       }
     };
   </script>
+
+  <!-- Modal: Video Save Location Picker -->
+  <div id="folderModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.75); z-index: 999; align-items: center; justify-content: center;">
+    <div style="background: #111827; border: 1.5px solid #38a169; border-radius: 14px; width: 560px; max-width: 92vw; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); display: flex; flex-direction: column; gap: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f2937; padding-bottom: 12px;">
+        <h3 style="font-size: 17px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px;">
+          📁 ជ្រើសរើសទីតាំងរក្សាទុកវីដេអូ (Save Location)
+        </h3>
+        <button onclick="closeFolderModal()" style="background: none; border: none; color: #9ca3af; font-size: 20px; cursor: pointer;">✕</button>
+      </div>
+
+      <div style="font-size: 13px; color: #cbd5e1; line-height: 1.6;">
+        ជ្រើសរើស Folder នៅលើកុំព្យូទ័ររបស់អ្នកដើម្បីរក្សាទុកវីដេអូភាគដែលបានទាញយក។ រាល់វីដេអូនឹងត្រូវបានបង្កើតជា Folder តាមឈ្មោះរឿងដោយស្វ័យប្រវត្តិ។
+      </div>
+
+      <div>
+        <label style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px; display: block;">ទីតាំងបច្ចុប្បន្ន (Current Path):</label>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="folderPathInput" placeholder="ឧ. D:\HDRG ឬ E:\Movies" style="flex: 1; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px 14px; color: #63b3ed; font-size: 13px; outline: none; font-family: monospace;">
+          <button type="button" class="btn-browse-folder" onclick="browseFolderNative()">
+            📂 រើសលើ PC...
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Preset Paths -->
+      <div>
+        <div style="font-size: 12px; color: #94a3b8; font-weight: 600; margin-bottom: 6px;">⚡ ទីតាំងពេញនិយម (Quick Presets):</div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button type="button" class="preset-pill" onclick="setPresetById(1)">📁 D:\HDRG (លំនាំដើម)</button>
+          <button type="button" class="preset-pill" onclick="setPresetById(2)">🎬 D:\Videos</button>
+          <button type="button" class="preset-pill" onclick="setPresetById(3)">⬇️ Downloads\HDRG</button>
+          <button type="button" class="preset-pill" onclick="setPresetById(4)">🖥️ Desktop\HDRG</button>
+        </div>
+      </div>
+
+      <div id="folderStatusBox" style="display: none; padding: 10px 14px; border-radius: 8px; font-size: 13px;"></div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #1f2937; padding-top: 14px;">
+        <button onclick="openFolder()" style="background: #1e293b; border: 1px solid #475569; color: #e2e8f0; padding: 9px 16px; border-radius: 8px; font-size: 13px; cursor: pointer; font-weight: 600;">
+          📂 បើកមើល Folder នេះ
+        </button>
+        <div style="display: flex; gap: 8px;">
+          <button onclick="closeFolderModal()" style="background: transparent; border: 1px solid #374151; color: #9ca3af; padding: 9px 16px; border-radius: 8px; font-size: 13px; cursor: pointer;">បិទ</button>
+          <button onclick="saveFolderPath()" style="background: linear-gradient(135deg, #22543d, #2f855a); border: 1px solid #48bb78; color: #fff; padding: 9px 20px; border-radius: 8px; font-size: 13px; cursor: pointer; font-weight: 700;">💾 រក្សាទុក (Save)</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Modal API Key Settings -->
   <div id="keyModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.75); z-index: 999; align-items: center; justify-content: center;">
@@ -1986,7 +2230,6 @@ const HTML_CONTENT = `<!DOCTYPE html>
       </div>
     </div>
   </div>
-  </script>
 </body>
 </html>`;
 
@@ -2113,7 +2356,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const info = await fetchEpisodeListSafe(sid);
       const cleanTitle = (info.series_title || 'Drama_' + sid).replace(/[\\/:*?"<>|]/g, '_');
-      const outputDir = path.join('D:\\HDRG', cleanTitle);
+      const outputDir = path.join(getDownloadDir(), cleanTitle);
       const downloaded = [];
       if (fs.existsSync(outputDir)) {
         const files = fs.readdirSync(outputDir);
@@ -2212,12 +2455,12 @@ const server = http.createServer(async (req, res) => {
     let body = '';
     req.on('data', c => body += c);
     req.on('end', () => {
-      let targetPath = 'D:\\HDRG';
+      let targetPath = getDownloadDir();
       try {
         const { title } = JSON.parse(body || '{}');
         if (title) {
           const cleanTitle = title.replace(/[\\/:*?"<>|]/g, '_');
-          const dramaDir = path.join('D:\\HDRG', cleanTitle);
+          const dramaDir = path.join(targetPath, cleanTitle);
           if (fs.existsSync(dramaDir)) {
             targetPath = dramaDir;
           }
@@ -2238,6 +2481,52 @@ const server = http.createServer(async (req, res) => {
       return res.end(JSON.stringify({ success: true, path: targetPath }));
     });
     return;
+  }
+
+  // Get or Set Video Download Directory
+  if (url.pathname === '/api/download-dir') {
+    if (req.method === 'POST') {
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        try {
+          const { path: newPath } = JSON.parse(body || '{}');
+          if (newPath && typeof newPath === 'string') {
+            const clean = path.normalize(newPath.trim());
+            if (!fs.existsSync(clean)) fs.mkdirSync(clean, { recursive: true });
+            saveConfig({ DOWNLOAD_DIR: clean });
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+            return res.end(JSON.stringify({ success: true, path: clean }));
+          }
+          throw new Error('ទីតាំងមិនត្រឹមត្រូវ');
+        } catch (e) {
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ success: false, error: e.message }));
+        }
+      });
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({ success: true, path: getDownloadDir() }));
+  }
+
+  // Browse Folder Dialog using Native Windows FolderBrowserDialog
+  if (url.pathname === '/api/browse-folder' && req.method === 'POST') {
+    try {
+      const chosen = await promptFolderPicker(getDownloadDir());
+      if (chosen) {
+        const clean = path.normalize(chosen.trim());
+        if (!fs.existsSync(clean)) fs.mkdirSync(clean, { recursive: true });
+        saveConfig({ DOWNLOAD_DIR: clean });
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ success: true, path: clean }));
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ success: false, cancelled: true }));
+    } catch (e) {
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ success: false, error: e.message }));
+    }
   }
 
   // Download Tool: serve setup.exe directly to browser
