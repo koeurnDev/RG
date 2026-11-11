@@ -36,10 +36,16 @@ temp_*
 *.tmp
 *.temp
 detail_page.html
+rank.html
+*.dump.html
 
-# System & IDE
+# Config & Secrets
+config.json
+*.env
+.env*
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
 *.log
+
