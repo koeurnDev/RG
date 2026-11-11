@@ -13,17 +13,74 @@ const dramaCache = new Map();
 
 // Configuration & Gemini API Key Storage
 const CONFIG_FILE = path.join(__dirname, 'config.json');
+const ENV_FILE = path.join(__dirname, 'hongguo-drama', 'scripts', '.env');
+
+// Parse a .env file and return key-value object
+function parseEnvFile(filePath) {
+  const result = {};
+  try {
+    if (!fs.existsSync(filePath)) return result;
+    const lines = fs.readFileSync(filePath, 'utf8').split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx < 0) continue;
+      const key = trimmed.slice(0, eqIdx).trim();
+      let val = trimmed.slice(eqIdx + 1).trim();
+      // Strip surrounding quotes (" or ')
+      if ((val.startsWith('"') && val.endsWith('"')) ||
+          (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      }
+      result[key] = val;
+    }
+  } catch (_) {}
+  return result;
+}
+
+// Save/update a key in .env file
+function saveEnvFile(filePath, updates) {
+  try {
+    let content = '';
+    if (fs.existsSync(filePath)) {
+      content = fs.readFileSync(filePath, 'utf8');
+    }
+    for (const [key, val] of Object.entries(updates)) {
+      const regex = new RegExp(`^${key}=.*$`, 'm');
+      const newLine = `${key}="${val}"`;
+      if (regex.test(content)) {
+        content = content.replace(regex, newLine);
+      } else {
+        content = content.trim() ? content.trim() + '\n' + newLine + '\n' : newLine + '\n';
+      }
+    }
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, content, 'utf8');
+  } catch (err) {
+    console.error('[ENV] Cannot save .env:', err.message);
+  }
+}
+
 function loadConfig() {
-  let cfg = { GEMINI_API_KEY: process.env.GEMINI_API_KEY || '' };
+  // Priority: .env file → config.json → process.env
+  const envData = parseEnvFile(ENV_FILE);
+  let cfg = { GEMINI_API_KEY: envData.GEMINI_API_KEY || process.env.GEMINI_API_KEY || '' };
   try {
     if (fs.existsSync(CONFIG_FILE)) {
       const parsed = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-      if (parsed.GEMINI_API_KEY) cfg.GEMINI_API_KEY = parsed.GEMINI_API_KEY;
+      // .env takes priority over config.json
+      if (!cfg.GEMINI_API_KEY && parsed.GEMINI_API_KEY) cfg.GEMINI_API_KEY = parsed.GEMINI_API_KEY;
     }
   } catch (_) {}
   return cfg;
 }
+
 function saveConfig(cfg) {
+  // Save to both .env AND config.json for compatibility
+  if (cfg.GEMINI_API_KEY) {
+    saveEnvFile(ENV_FILE, { GEMINI_API_KEY: cfg.GEMINI_API_KEY });
+  }
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
   try {
     const ezargDir = 'D:\\EZARG';
