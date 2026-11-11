@@ -805,17 +805,19 @@ const HTML_CONTENT = `<!DOCTYPE html>
     
     /* Huge Download Action Bar */
     .download-bar { background: #0f1622; border: 1.5px solid #2b6cb0; border-radius: 12px; padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
-    .btn-download-giant { background: linear-gradient(135deg, #38a169, #276749); color: #fff; border: none; padding: 14px 26px; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 15px rgba(56, 161, 105, 0.4); transition: 0.2s; }
-    .btn-download-giant:hover { background: linear-gradient(135deg, #2f855a, #22543d); transform: translateY(-2px); }
-    .btn-test-ep { background: linear-gradient(135deg, #3182ce, #2b6cb0); color: #fff; border: none; padding: 14px 20px; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; }
-    .btn-test-ep:hover { background: #2b6cb0; }
-    .btn-stop-all { background: #c53030; color: #fff; border: none; padding: 14px 18px; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
-    .btn-stop-all:hover { background: #9b2c2c; }
+    .btn-download-giant { background: linear-gradient(135deg, #22543d, #2f855a); color: #fff; border: 1.5px solid #48bb78; padding: 14px 26px; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 15px rgba(56, 161, 105, 0.4); transition: 0.2s; }
+    .btn-download-giant:hover:not(:disabled) { background: linear-gradient(135deg, #2f855a, #38a169); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(56, 161, 105, 0.6); }
+    .btn-test-ep { background: linear-gradient(135deg, #3182ce, #2b6cb0); color: #fff; border: none; padding: 14px 20px; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s; }
+    .btn-test-ep:hover { background: #2b6cb0; transform: translateY(-1px); }
+    .btn-stop-all { background: linear-gradient(135deg, #9b2c2c, #742a2a); border: 1.5px solid #e53e3e; color: #fff; padding: 14px 20px; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s; }
+    .btn-stop-all:hover { background: linear-gradient(135deg, #c53030, #9b2c2c); transform: translateY(-1px); box-shadow: 0 4px 15px rgba(229, 62, 62, 0.4); }
 
     /* Live Progress Card (Visible when downloading) */
-    .progress-card { background: #1a2230; border: 1.5px solid #38a169; border-radius: 12px; padding: 16px 20px; display: none; }
-    .progress-bar-bg { width: 100%; height: 14px; background: #0c1017; border-radius: 7px; overflow: hidden; margin: 10px 0; border: 1px solid var(--border); }
-    .progress-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #dd6b20, #38a169); transition: width 0.3s; }
+    .progress-card { background: #131d2a; border: 1.5px solid #38a169; border-radius: 14px; padding: 18px 22px; display: none; box-shadow: 0 8px 25px rgba(0,0,0,0.5); }
+    .progress-bar-bg { width: 100%; height: 16px; background: #0c1017; border-radius: 8px; overflow: hidden; margin: 12px 0 8px 0; border: 1px solid var(--border); box-shadow: inset 0 2px 4px rgba(0,0,0,0.6); }
+    .progress-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #dd6b20, #38a169, #48bb78); transition: width 0.3s; box-shadow: 0 0 12px rgba(72, 187, 120, 0.6); }
+    .btn-cancel-download { background: linear-gradient(135deg, #9b2c2c, #742a2a); border: 1px solid #e53e3e; color: #fff; padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s; }
+    .btn-cancel-download:hover { background: linear-gradient(135deg, #c53030, #9b2c2c); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(229, 62, 62, 0.5); }
 
     /* Guide Box */
     .guide-box { background: rgba(49, 130, 206, 0.1); border: 1px dashed #3182ce; border-radius: 10px; padding: 12px 16px; font-size: 13px; line-height: 1.6; color: #bee3f8; }
@@ -987,14 +989,34 @@ const HTML_CONTENT = `<!DOCTYPE html>
 
       <!-- Live Progress Card (Visible when downloading) -->
       <div id="progressCard" class="progress-card">
-        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 14px;">
-          <span id="liveStatusText" style="color: #68d391;">🔥 កំពុងចាប់ផ្ដើមដំណើរការទាញយក...</span>
-          <span id="livePercentText" style="color: #fff;">0%</span>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #48bb78; box-shadow: 0 0 8px #48bb78;"></span>
+            <span id="liveStatusText" style="color: #68d391; font-weight: bold; font-size: 14px;">🔥 កំពុងចាប់ផ្ដើមដំណើរការទាញយក...</span>
+          </div>
+          <button onclick="stopDownload()" class="btn-cancel-download">
+            🛑 បោះបង់ (Cancel)
+          </button>
         </div>
+
         <div class="progress-bar-bg">
           <div id="liveProgressBar" class="progress-bar-fill"></div>
         </div>
-        <div style="font-size: 12px; color: #a0aec0;">វីដេអូនីមួយៗនឹងរក្សាទុកក្នុង Folder: <b>D:\\HDRG</b></div>
+
+        <!-- Live Metrics Bar: Timer, Percent, Speed, Output -->
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #cbd5e1; flex-wrap: wrap; gap: 8px; margin-top: 6px;">
+          <div style="display: flex; gap: 14px; align-items: center;">
+            <span id="liveTimerText" style="color: #60a5fa; font-weight: 700; display: flex; align-items: center; gap: 4px; background: rgba(37,99,235,0.15); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(59,130,246,0.3);">
+              ⏱️ <span>00:00</span>
+            </span>
+            <span id="liveSpeedText" style="color: #f6ad55; font-weight: 600;">⚡ 6 Threads Turbo</span>
+            <span id="liveEpCountText" style="color: #9ae6b4; font-weight: 600;">📦 0 ភាគ</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span id="livePercentText" style="color: #fff; font-weight: 700; font-size: 15px;">0%</span>
+            <button onclick="openFolder()" style="background: rgba(49, 130, 206, 0.2); border: 1px solid #3182ce; color: #90cdf4; padding: 4px 10px; border-radius: 5px; font-size: 11px; font-weight: 600; cursor: pointer;">📂 បើកមើល Folder</button>
+          </div>
+        </div>
       </div>
 
       <!-- Quick User Guide -->
@@ -1328,8 +1350,9 @@ const HTML_CONTENT = `<!DOCTYPE html>
       document.getElementById('bannerKhmer').innerText = titleKhmer || title;
       document.getElementById('bannerCover').src = cover;
       document.getElementById('bannerId').innerText = 'Series ID: ' + id;
-      document.getElementById('bannerTotal').innerText = totalEps ? ('សរុប: ' + totalEps + ' ភាគ') : 'កំពុងផ្ទុកចំនួនភាគ...';
-      document.getElementById('btnDownloadAll').innerText = '🚀 ទាញយកគ្រប់ភាគទាំងអស់' + (totalEps ? ' (ភាគ 1 ដល់ ' + totalEps + ')' : '');
+      const validInitialTotal = totalEps || 80;
+      document.getElementById('bannerTotal').innerText = 'សរុប: ' + validInitialTotal + ' ភាគ';
+      document.getElementById('btnDownloadAll').innerText = '🚀 ទាញយកគ្រប់ភាគទាំងអស់ (ភាគ 1 ដល់ ' + validInitialTotal + ')';
 
       // Auto-translate banner Khmer title with Gemini in background
       autoGeminiTranslateTitle(title);
@@ -1364,6 +1387,35 @@ const HTML_CONTENT = `<!DOCTYPE html>
     }
 
     let activeEventSource = null;
+    let downloadTimerInterval = null;
+    let downloadSecondsElapsed = 0;
+
+    function startDownloadTimer() {
+      stopDownloadTimer();
+      downloadSecondsElapsed = 0;
+      const el = document.getElementById('liveTimerText');
+      if (el) el.innerHTML = '⏱️ <span>00:00</span>';
+      downloadTimerInterval = setInterval(() => {
+        downloadSecondsElapsed++;
+        const mins = String(Math.floor(downloadSecondsElapsed / 60)).padStart(2, '0');
+        const secs = String(downloadSecondsElapsed % 60).padStart(2, '0');
+        if (el) el.innerHTML = '⏱️ <span>' + mins + ':' + secs + '</span>';
+      }, 1000);
+    }
+
+    function stopDownloadTimer() {
+      if (downloadTimerInterval) {
+        clearInterval(downloadTimerInterval);
+        downloadTimerInterval = null;
+      }
+    }
+
+    function formatTime(sec) {
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      if (m === 0) return s + ' វិនាទី';
+      return m + ' នាទី ' + s + ' វិនាទី';
+    }
 
     function connectSSE() {
       if (activeEventSource) {
@@ -1373,13 +1425,15 @@ const HTML_CONTENT = `<!DOCTYPE html>
       activeEventSource.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data.status === 'cancelled') {
+          stopDownloadTimer();
           if (activeEventSource) {
             try { activeEventSource.close(); } catch (_) {}
             activeEventSource = null;
           }
           isDownloading = false;
-          document.getElementById('liveStatusText').innerText = '🛑 បានផ្អាកការទាញយកដោយជោគជ័យ';
-          document.getElementById('btnDownloadAll').innerText = '🚀 បន្តទាញយកគ្រប់ភាគទាំងអស់';
+          document.getElementById('liveStatusText').innerText = '🛑 បានផ្អាក/បោះបង់ការទាញយក (ចំណាយពេល ' + formatTime(downloadSecondsElapsed) + ')';
+          const validTotal = currentDrama ? (Number(currentDrama.total) || 80) : 80;
+          document.getElementById('btnDownloadAll').innerText = '🚀 បន្តទាញយកគ្រប់ភាគ (ភាគ 1 ដល់ ' + validTotal + ')';
           document.getElementById('btnDownloadAll').disabled = false;
           for (let ep = 1; ep <= currentDrama.total; ep++) {
             if (episodeStates[ep] === 'downloading') episodeStates[ep] = 'pending';
@@ -1393,8 +1447,8 @@ const HTML_CONTENT = `<!DOCTYPE html>
           const pill = document.getElementById('pill_ep_' + data.epNum);
           if (pill) {
             pill.className = 'ep-pill ' + data.status;
-            if (data.status === 'downloading') pill.children[1].innerText = (data.percent || 15) + '%';
-            if (data.status === 'done') pill.children[1].innerText = '✓ រួចរាល់';
+            if (data.status === 'downloading') pill.children[1].innerText = (data.percent || 20) + '%';
+            if (data.status === 'done') pill.children[1].innerText = '✓ រួចរាល់ (' + (data.size || '') + ')';
           }
           updateStats();
         }
@@ -1406,9 +1460,14 @@ const HTML_CONTENT = `<!DOCTYPE html>
           }
         }
         if (data.status === 'done') {
+          stopDownloadTimer();
           isDownloading = false;
-          document.getElementById('btnDownloadAll').innerText = '🚀 ទាញយកគ្រប់ភាគទាំងអស់';
+          const validTotal = currentDrama ? (Number(currentDrama.total) || 80) : 80;
+          document.getElementById('btnDownloadAll').innerText = '🚀 ទាញយកគ្រប់ភាគទាំងអស់ (ភាគ 1 ដល់ ' + validTotal + ')';
           document.getElementById('btnDownloadAll').disabled = false;
+          document.getElementById('liveStatusText').innerText = '✅ បានទាញយកចប់គ្រប់ភាគដោយជោគជ័យ! (សរុប ' + formatTime(downloadSecondsElapsed) + ')';
+          document.getElementById('liveProgressBar').style.width = '100%';
+          document.getElementById('livePercentText').innerText = '100%';
           if (activeEventSource) {
             try { activeEventSource.close(); } catch (_) {}
             activeEventSource = null;
@@ -1418,6 +1477,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
     }
 
     function downloadAllEpisodes() {
+      if (!currentDrama) return alert('សូមជ្រើសរើសរឿងជាមុនសិន!');
       const selectedEps = [];
       for (let ep = 1; ep <= currentDrama.total; ep++) {
         if (episodeStates[ep] !== 'done') selectedEps.push(ep);
@@ -1428,14 +1488,35 @@ const HTML_CONTENT = `<!DOCTYPE html>
     }
 
     function downloadSingleEpisode(ep) {
+      if (!currentDrama) return alert('សូមជ្រើសរើសរឿងជាមុនសិន!');
       triggerDownload([ep]);
     }
 
     function triggerDownload(eps) {
+      if (!currentDrama) return alert('សូមជ្រើសរើសរឿងជាមុនសិន!');
       isDownloading = true;
       document.getElementById('progressCard').style.display = 'block';
-      document.getElementById('btnDownloadAll').innerText = '⏳ កំពុងដំណើរការទាញយក...';
+
+      const validTotal = Number(currentDrama.total) || 80;
+      const labelText = eps.length === 1
+        ? '⏳ កំពុងទាញភាគ ' + eps[0] + '... (ចុច 🛑 បោះបង់)'
+        : '⏳ កំពុងទាញយក ' + eps.length + ' ភាគ (ភាគ 1 ដល់ ' + validTotal + ')...';
+      document.getElementById('btnDownloadAll').innerText = labelText;
       document.getElementById('btnDownloadAll').disabled = true;
+
+      // Start live ticking timer
+      startDownloadTimer();
+
+      document.getElementById('liveStatusText').innerText = eps.length === 1
+        ? '🔥 កំពុងទាញយកភាគទី ' + eps[0] + '...'
+        : '🔥 កំពុងចាប់ផ្ដើមទាញយកចំនួន ' + eps.length + ' ភាគ (Turbo Multi-threading)...';
+
+      document.getElementById('liveEpCountText').innerText = eps.length === 1
+        ? '📦 ភាគទី ' + eps[0]
+        : '📦 0/' + eps.length + ' ភាគ';
+
+      document.getElementById('liveProgressBar').style.width = '5%';
+      document.getElementById('livePercentText').innerText = '5%';
 
       connectSSE();
 
@@ -1448,24 +1529,28 @@ const HTML_CONTENT = `<!DOCTYPE html>
     }
 
     async function stopDownload() {
+      stopDownloadTimer();
       document.getElementById('liveStatusText').innerText = '⏳ កំពុងផ្អាក...';
       if (activeEventSource) {
         try { activeEventSource.close(); } catch (_) {}
         activeEventSource = null;
       }
       isDownloading = false;
-      document.getElementById('btnDownloadAll').innerText = '🚀 បន្តទាញយកគ្រប់ភាគទាំងអស់';
+      const validTotal = currentDrama ? (Number(currentDrama.total) || 80) : 80;
+      document.getElementById('btnDownloadAll').innerText = '🚀 បន្តទាញយកគ្រប់ភាគ (ភាគ 1 ដល់ ' + validTotal + ')';
       document.getElementById('btnDownloadAll').disabled = false;
 
-      for (let ep = 1; ep <= currentDrama.total; ep++) {
-        if (episodeStates[ep] === 'downloading') {
-          episodeStates[ep] = 'pending';
+      if (currentDrama) {
+        for (let ep = 1; ep <= currentDrama.total; ep++) {
+          if (episodeStates[ep] === 'downloading') {
+            episodeStates[ep] = 'pending';
+          }
         }
+        renderEpisodesGrid();
       }
-      renderEpisodesGrid();
 
       await fetch('/api/stop-download', { method: 'POST' });
-      document.getElementById('liveStatusText').innerText = '🛑 បានផ្អាកការទាញយកដោយជោគជ័យ';
+      document.getElementById('liveStatusText').innerText = '🛑 បានបោះបង់/ផ្អាកការទាញយកដោយជោគជ័យ!';
     }
 
     async function openFolder() {
