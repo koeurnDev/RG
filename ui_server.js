@@ -1180,6 +1180,9 @@ const HTML_CONTENT = `<!DOCTYPE html>
       document.getElementById('bannerTotal').innerText = 'សរុប: ' + (total || 80) + ' ភាគ';
       document.getElementById('btnDownloadAll').innerText = \`🚀 ទាញយកគ្រប់ភាគទាំងអស់ (ភាគ 1 ដល់ \${total || 80})\`;
 
+      // Auto-translate banner Khmer title with Gemini in background
+      autoGeminiTranslateTitle(title);
+
       episodeStates = {};
       for (let i = 1; i <= currentDrama.total; i++) {
         episodeStates[i] = 'pending';
@@ -1411,6 +1414,24 @@ const HTML_CONTENT = `<!DOCTYPE html>
       span.innerHTML = isLoading
         ? '<span style="color:#a0aec0;">⏳ Gemini AI កំពុងគិត...</span>'
         : text;
+    }
+
+    // Auto translate title with Gemini in background when user clicks any drama
+    async function autoGeminiTranslateTitle(title) {
+      if (!title) return;
+      try {
+        const res = await fetch('/api/gemini-translate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title })
+        });
+        const data = await res.json();
+        if (data && data.khmer && !data.error) {
+          const khmerElem = document.getElementById('bannerKhmer');
+          if (khmerElem) khmerElem.innerText = data.khmer;
+          if (currentDrama) currentDrama.titleKhmer = data.khmer;
+        }
+      } catch (_) {}
     }
 
     async function geminiTranslateTitle() {
