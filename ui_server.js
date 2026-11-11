@@ -840,7 +840,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
         </div>
         <div class="panel-subtitle">
           <span id="categoryDesc">Official Hongguo Rankings</span>
-          <span>ប្តូរថ្មីក្នុង: <b id="timerCountdown" style="color: #68d391;">10:00</b></span>
+          <span id="categoryStats" style="color: #68d391; font-weight: 600;">100 រឿង</span>
         </div>
 
         <!-- Category Selector Tabs -->
@@ -1002,8 +1002,13 @@ const HTML_CONTENT = `<!DOCTYPE html>
       suspense: { title: '🔍 អាថ៌កំបាំង & ព្រឺព្រួច (Mystery & Suspense)', desc: 'រឿងស៊ើបអង្កេត អាថ៌កំបាំង 悬疑 惊悚' }
     };
 
-    async function switchCategory(cat) {
+      let page = 1;
+      let pageSize = 20;
+      let displayedCount = 0;
+
+      async function switchCategory(cat) {
       currentCategory = cat;
+      displayedCount = 0;
       document.querySelectorAll('.cat-tab').forEach(t => {
         t.classList.toggle('active', t.getAttribute('data-cat') === cat);
       });
@@ -1020,20 +1025,22 @@ const HTML_CONTENT = `<!DOCTYPE html>
       const container = document.getElementById('libraryList');
       if (categoryDramasMap[cat] && !force) {
         allCurrentDramas = categoryDramasMap[cat];
+        displayedCount = Math.min(20, allCurrentDramas.length);
         renderLibraryCards(allCurrentDramas);
         return;
       }
 
       container.innerHTML = '<div style="color: #718096; padding: 30px; text-align: center;">⏳ កំពុងទាញយកទិន្នន័យ...</div>';
       try {
-        const res = await fetch(\`/api/catalog?category=\${cat}\${force ? '&refresh=1' : ''}\`);
+        const query = '/api/catalog?category=' + cat + (force ? '&refresh=1' : '');
+        const res = await fetch(query);
         const data = await res.json();
         allCurrentDramas = data.dramas || [];
         categoryDramasMap[cat] = allCurrentDramas;
-        if (data.nextRefreshIn) refreshSecondsLeft = data.nextRefreshIn;
+        displayedCount = Math.min(20, allCurrentDramas.length);
         renderLibraryCards(allCurrentDramas);
       } catch (err) {
-        container.innerHTML = \`<div style="color: #e53e3e; padding: 20px; text-align: center;">បរាជ័យក្នុងការទាញយក: \${err.message}</div>\`;
+        container.innerHTML = '<div style="color: #e53e3e; padding: 20px; text-align: center;">បរាជ័យក្នុងការទាញយក: ' + err.message + '</div>';
       }
     }
 
@@ -1043,12 +1050,26 @@ const HTML_CONTENT = `<!DOCTYPE html>
       document.getElementById('refreshBtnText').innerText = '🔄 Refresh';
     }
 
+    function loadMoreDramas() {
+      displayedCount = Math.min(displayedCount + 20, allCurrentDramas.length);
+      renderLibraryCards(allCurrentDramas);
+    }
+
     function renderLibraryCards(dramas) {
       const container = document.getElementById('libraryList');
       if (!dramas || dramas.length === 0) {
         container.innerHTML = '<div style="color: #718096; padding: 30px; text-align: center;">មិនមានរឿងក្នុងប្រភេទនេះទេ</div>';
+        const statsEl = document.getElementById('categoryStats');
+        if (statsEl) statsEl.innerText = '0 រឿង';
         return;
       }
+
+      const q = document.getElementById('librarySearch').value.trim();
+      const limit = q ? dramas.length : (displayedCount || 20);
+      const visible = dramas.slice(0, limit);
+
+      const statsEl = document.getElementById('categoryStats');
+      if (statsEl) statsEl.innerText = visible.length + '/' + dramas.length + ' រឿង';
 
       const badgeMap = {
         sad: ['badge-sad', '😭 កម្សត់'],
@@ -1062,15 +1083,15 @@ const HTML_CONTENT = `<!DOCTYPE html>
         suspense: ['badge-genre', '🔍 អាថ៌កំបាំង']
       };
 
-      container.innerHTML = dramas.map((d, idx) => {
+      let cardsHtml = visible.map((d, idx) => {
         let badgeClass = 'badge-genre';
-        let badgeLabel = \`#\${idx + 1}\`;
+        let badgeLabel = '#' + (idx + 1);
 
         if (currentCategory === 'trending') {
           if (d.rank === 1) { badgeClass = 'rank-gold'; badgeLabel = '🥇 #1'; }
           else if (d.rank === 2) { badgeClass = 'rank-silver'; badgeLabel = '🥈 #2'; }
           else if (d.rank === 3) { badgeClass = 'rank-bronze'; badgeLabel = '🥉 #3'; }
-          else { badgeClass = 'rank-normal'; badgeLabel = \`#\${d.rank || idx + 1}\`; }
+          else { badgeClass = 'rank-normal'; badgeLabel = '#' + (d.rank || (idx + 1)); }
         } else if (badgeMap[currentCategory]) {
           badgeClass = badgeMap[currentCategory][0];
           badgeLabel = badgeMap[currentCategory][1];
@@ -1081,22 +1102,32 @@ const HTML_CONTENT = `<!DOCTYPE html>
         const safeCover = d.cover || 'https://p6-novel.byteimg.com/novel-pic/dd47bf8f4357b931ef542a2f91478aed~tplv-shrink:640:0.image';
         const totalEps = d.total || 80;
 
-        return \`
-          <div class="drama-card-mini" onclick="loadDrama('\${d.id}', '\${safeTitle}', '\${safeCover}', \${totalEps}, '\${safeKhmer}')">
-            <div class="rank-badge \${badgeClass}">\${badgeLabel}</div>
-            <img src="\${safeCover}" class="mini-cover" loading="lazy" onerror="this.src='https://p6-novel.byteimg.com/novel-pic/dd47bf8f4357b931ef542a2f91478aed~tplv-shrink:640:0.image'">
-            <div class="mini-info">
-              <div class="mini-title">\${d.title}</div>
-              <div class="mini-khmer">\${d.titleKhmer || 'រឿងភាគខ្លីពិសេស'}</div>
-              <div class="mini-heat">\${d.heat ? '🔥 ' + d.heat : 'Hongguo Official'}</div>
-              <div class="mini-tags">
-                \${(d.tags || []).slice(0, 2).map(t => \`<span class="mini-tag">\${t}</span>\`).join('')}
-                <span class="mini-tag" style="background: rgba(56, 161, 105, 0.2); color: #9ae6b4;">\${totalEps} ភាគ</span>
-              </div>
-            </div>
-          </div>
-        \`;
+        return '<div class="drama-card-mini" onclick="loadDrama(\'' + d.id + '\', \'' + safeTitle + '\', \'' + safeCover + '\', ' + totalEps + ', \'' + safeKhmer + '\')">' +
+            '<div class="rank-badge ' + badgeClass + '">' + badgeLabel + '</div>' +
+            '<img src="' + safeCover + '" class="mini-cover" loading="lazy" onerror="this.src=\'https://p6-novel.byteimg.com/novel-pic/dd47bf8f4357b931ef542a2f91478aed~tplv-shrink:640:0.image\'">' +
+            '<div class="mini-info">' +
+              '<div class="mini-title">' + d.title + '</div>' +
+              '<div class="mini-khmer">' + (d.titleKhmer || 'រឿងភាគខ្លីពិសេស') + '</div>' +
+              '<div class="mini-heat">' + (d.heat ? '🔥 ' + d.heat : 'Hongguo Official') + '</div>' +
+              '<div class="mini-tags">' +
+                (d.tags || []).slice(0, 2).map(t => '<span class="mini-tag">' + t + '</span>').join('') +
+                '<span class="mini-tag" style="background: rgba(56, 161, 105, 0.2); color: #9ae6b4;">' + totalEps + ' ភាគ</span>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
       }).join('');
+
+      // Add "Load More / មើលបន្ថែម" Button if there are remaining dramas
+      if (!q && visible.length < dramas.length) {
+        const remaining = dramas.length - visible.length;
+        cardsHtml += '<div style="padding: 14px 10px; text-align: center;">' +
+            '<button onclick="loadMoreDramas()" style="width: 100%; background: linear-gradient(135deg, #1e3a8a, #2563eb); border: 1px solid #3b82f6; color: #fff; font-size: 13px; font-weight: bold; padding: 10px 16px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s; font-family: inherit;">' +
+              '<span>➕ មើលរឿងបន្ថែម (នៅសល់ ' + remaining + ' រឿងទៀត)</span>' +
+            '</button>' +
+          '</div>';
+      }
+
+      container.innerHTML = cardsHtml;
     }
 
     function filterLibrary() {
@@ -1110,19 +1141,16 @@ const HTML_CONTENT = `<!DOCTYPE html>
       renderLibraryCards(filtered);
     }
 
-    // 10-Minute Countdown Timer
+    // Background Cache Refresh (Silent update every 10 mins without resetting user view)
     setInterval(() => {
-      refreshSecondsLeft--;
-      if (refreshSecondsLeft <= 0) {
-        reloadCurrentCategory(true);
-        refreshSecondsLeft = 600;
-      }
-      const mins = Math.floor(refreshSecondsLeft / 60);
-      const secs = refreshSecondsLeft % 60;
-      const str = String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
-      const timerEl = document.getElementById('timerCountdown');
-      if (timerEl) timerEl.innerText = str;
-    }, 1000);
+      // Fetch fresh data in background without interrupting current UI
+      fetch('/api/catalog?category=' + currentCategory + '&refresh=1').then(r => r.json()).then(data => {
+        if (data && data.dramas) {
+          categoryDramasMap[currentCategory] = data.dramas;
+          allCurrentDramas = data.dramas;
+        }
+      }).catch(() => {});
+    }, 10 * 60 * 1000);
 
     function renderEpisodesGrid() {
       const grid = document.getElementById('episodesGrid');
