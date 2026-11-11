@@ -1980,11 +1980,10 @@ Khmer synopsis:`;
 // ===== GEMINI API HELPER (HTTPS call) =====
 const https = require('https');
 const GEMINI_MODELS = [
-  'gemini-flash-latest',
   'gemini-flash-lite-latest',
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-lite',
-  'gemini-pro-latest'
+  'gemini-flash-latest',
+  'gemini-3.5-flash-lite',
+  'gemini-3.8-flash'
 ];
 
 async function testGeminiKey(apiKey) {
@@ -1996,7 +1995,7 @@ async function testGeminiKey(apiKey) {
     } catch (err) {
       lastError = err;
       const m = err.message || '';
-      if (!m.includes('not found') && !m.includes('not supported') && !m.includes('no longer available')) {
+      if (m.includes('API_KEY_INVALID') || m.includes('API key not valid')) {
         throw err;
       }
     }
@@ -2017,9 +2016,10 @@ async function callGemini(prompt) {
     } catch (err) {
       lastError = err;
       const m = err.message || '';
-      if (!m.includes('not found') && !m.includes('not supported') && !m.includes('no longer available')) {
+      if (m.includes('API_KEY_INVALID') || m.includes('API key not valid')) {
         throw err;
       }
+      console.warn(`[Gemini Fallback] Model ${model} failed: ${m.slice(0, 80)}. Trying next model...`);
     }
   }
   throw lastError;
@@ -2040,7 +2040,8 @@ function callGeminiModel(model, apiKey, prompt) {
       headers: {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(bodyStr)
-      }
+      },
+      timeout: 10000
     };
     const reqG = https.request(options, (r) => {
       let data = '';
@@ -2053,6 +2054,10 @@ function callGeminiModel(model, apiKey, prompt) {
           resolve(text.trim());
         } catch (e) { reject(e); }
       });
+    });
+    reqG.on('timeout', () => {
+      reqG.destroy();
+      reject(new Error(`Model ${model} request timed out after 10s`));
     });
     reqG.on('error', reject);
     reqG.write(bodyStr);
