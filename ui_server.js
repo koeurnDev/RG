@@ -883,6 +883,34 @@ const HTML_CONTENT = `<!DOCTYPE html>
               <span>•</span>
               <span style="color: #68d391; font-weight: bold;">កម្រិត 1080p Full HD</span>
             </div>
+
+            <!-- Gemini AI Zone -->
+            <div id="geminiZone" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+              <!-- Gemini Translate Title Button -->
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <button id="btnGeminiTranslate" onclick="geminiTranslateTitle()"
+                  style="background: linear-gradient(135deg, #1a56db, #7c3aed); border: none; color: #fff;
+                  padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
+                  display: flex; align-items: center; gap: 5px; font-family: inherit;">
+                  🤖 Gemini បកប្រែចំណងជើង
+                </button>
+                <button id="btnGeminiSynopsis" onclick="geminiGetSynopsis()"
+                  style="background: linear-gradient(135deg, #065f46, #0d9488); border: none; color: #fff;
+                  padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
+                  display: flex; align-items: center; gap: 5px; font-family: inherit;">
+                  📖 AI ពន្យល់រឿង
+                </button>
+              </div>
+              <!-- Gemini Result Box -->
+              <div id="geminiResultBox" style="display:none; background: #0f1a2e; border: 1px solid #2d4a7a;
+                border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #90cdf4; line-height: 1.7;
+                max-height: 100px; overflow-y: auto; position: relative;">
+                <span id="geminiResultText"></span>
+                <button onclick="document.getElementById('geminiResultBox').style.display='none'"
+                  style="position:absolute; top:4px; right:6px; background:none; border:none;
+                  color:#718096; cursor:pointer; font-size:14px;">✕</button>
+              </div>
+            </div>
           </div>
 
           <!-- The Giant Download Action Buttons -->
@@ -1375,6 +1403,71 @@ const HTML_CONTENT = `<!DOCTYPE html>
       }
     }
 
+    // ===== GEMINI AI FUNCTIONS =====
+    function showGeminiResult(text, isLoading = false) {
+      const box = document.getElementById('geminiResultBox');
+      const span = document.getElementById('geminiResultText');
+      box.style.display = 'block';
+      span.innerHTML = isLoading
+        ? '<span style="color:#a0aec0;">⏳ Gemini AI កំពុងគិត...</span>'
+        : text;
+    }
+
+    async function geminiTranslateTitle() {
+      const title = document.getElementById('bannerTitle').innerText;
+      if (!title) return;
+      const btn = document.getElementById('btnGeminiTranslate');
+      btn.disabled = true;
+      btn.innerText = '⏳ កំពុង...';
+      showGeminiResult('', true);
+      try {
+        const res = await fetch('/api/gemini-translate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title })
+        });
+        const data = await res.json();
+        if (data.error) {
+          showGeminiResult('<span style="color:#fc8181;">❌ ' + data.error + '</span>');
+        } else {
+          // Update the Khmer subtitle with Gemini result
+          document.getElementById('bannerKhmer').innerText = data.khmer;
+          if (currentDrama) currentDrama.titleKhmer = data.khmer;
+          showGeminiResult('✅ <b style="color:#68d391;">ចំណងជើងខ្មែរ:</b> ' + data.khmer);
+        }
+      } catch (err) {
+        showGeminiResult('<span style="color:#fc8181;">❌ ' + err.message + '</span>');
+      }
+      btn.disabled = false;
+      btn.innerText = '🤖 Gemini បកប្រែចំណងជើង';
+    }
+
+    async function geminiGetSynopsis() {
+      const title = document.getElementById('bannerTitle').innerText;
+      if (!title) return;
+      const btn = document.getElementById('btnGeminiSynopsis');
+      btn.disabled = true;
+      btn.innerText = '⏳ កំពុង...';
+      showGeminiResult('', true);
+      try {
+        const res = await fetch('/api/gemini-synopsis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title })
+        });
+        const data = await res.json();
+        if (data.error) {
+          showGeminiResult('<span style="color:#fc8181;">❌ ' + data.error + '</span>');
+        } else {
+          showGeminiResult('📖 <b style="color:#90cdf4;">ព្រឹត្តិការណ៍:</b> ' + data.synopsis);
+        }
+      } catch (err) {
+        showGeminiResult('<span style="color:#fc8181;">❌ ' + err.message + '</span>');
+      }
+      btn.disabled = false;
+      btn.innerText = '📖 AI ពន្យល់រឿង';
+    }
+
     // ===== DOWNLOAD TOOL FUNCTION =====
     function downloadTool() {
       const btn = document.getElementById('dlToolBtn');
@@ -1535,18 +1628,12 @@ const server = http.createServer(async (req, res) => {
         const { apiKey } = JSON.parse(body || '{}');
         const key = (apiKey || loadConfig().GEMINI_API_KEY || '').trim();
         if (!key) throw new Error('សូមបញ្ចូល API Key ជាមុនសិន!');
-        const axios = require('./hongguo-drama/node_modules/axios');
-        const testUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
-        const resp = await axios.post(testUrl, {
-          contents: [{ parts: [{ text: "Translate '你好' to natural movie Khmer in 1 word." }] }]
-        }, { timeout: 10000 });
-        const text = resp.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'សួស្តី';
+        const text = await testGeminiKey(key);
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ success: true, message: `Key ត្រឹមត្រូវ និងដំណើរការល្អ! (តេស្តបកប្រែ: ${text})` }));
       } catch (err) {
-        const msg = err.response?.data?.error?.message || err.message;
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ success: false, error: 'Key មិនត្រឹមត្រូវ ឬមានបញ្ហា: ' + msg }));
+        return res.end(JSON.stringify({ success: false, error: 'Key មិនត្រឹមត្រូវ ឬមានបញ្ហា: ' + err.message }));
       }
     });
     return;
@@ -1726,9 +1813,128 @@ const server = http.createServer(async (req, res) => {
     return readStream.pipe(res);
   }
 
+  // ===== GEMINI: Translate Drama Title Chinese → Khmer =====
+  if (url.pathname === '/api/gemini-translate' && req.method === 'POST') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { title } = JSON.parse(body || '{}');
+        if (!title) { res.writeHead(400); return res.end(JSON.stringify({ error: 'title required' })); }
+        const prompt = `You are a Khmer drama translator. Translate this Chinese drama title to natural Khmer language (ភាសាខ្មែរ). 
+Return ONLY the Khmer translation, no explanation, no Chinese characters, no romanization.
+Chinese title: "${title}"
+Khmer translation:`;
+        const khmer = await callGemini(prompt);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ khmer }));
+      } catch (err) {
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // ===== GEMINI: Drama Synopsis in Khmer =====
+  if (url.pathname === '/api/gemini-synopsis' && req.method === 'POST') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { title } = JSON.parse(body || '{}');
+        if (!title) { res.writeHead(400); return res.end(JSON.stringify({ error: 'title required' })); }
+        const prompt = `You are a Khmer drama expert. Based on this Chinese drama title, write a short 2-3 sentence synopsis in natural Khmer language (ភាសាខ្មែរ).
+Make it sound like a real drama description. Return ONLY Khmer text.
+Drama title: "${title}"
+Khmer synopsis:`;
+        const synopsis = await callGemini(prompt);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ synopsis }));
+      } catch (err) {
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
   res.writeHead(404);
   res.end('Not Found');
 });
+
+// ===== GEMINI API HELPER (HTTPS call) =====
+const https = require('https');
+async function testGeminiKey(apiKey) {
+  if (!apiKey) throw new Error('សូមបញ្ចូល API Key!');
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+  let lastError = null;
+  for (const model of models) {
+    try {
+      return await callGeminiModel(model, apiKey, "Translate '你好' to Khmer in 1 word.");
+    } catch (err) {
+      lastError = err;
+      if (!err.message.includes('not found') && !err.message.includes('not supported') && !err.message.includes('no longer available')) throw err;
+    }
+  }
+  throw lastError;
+}
+
+async function callGemini(prompt) {
+  const cfg = loadConfig();
+  const apiKey = cfg.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('មិនទាន់ដាក់ Gemini API Key — ចុច 🔑 Gemini Key ក្នុង topbar');
+
+  // Try available flash models in order
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+  let lastError = null;
+
+  for (const model of models) {
+    try {
+      const result = await callGeminiModel(model, apiKey, prompt);
+      return result;
+    } catch (err) {
+      lastError = err;
+      if (!err.message.includes('not found') && !err.message.includes('not supported') && !err.message.includes('no longer available')) throw err;
+    }
+  }
+  throw lastError;
+}
+
+function callGeminiModel(model, apiKey, prompt) {
+  const endpoint = new URL(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`);
+  const bodyStr = JSON.stringify({
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.3, maxOutputTokens: 512 }
+  });
+
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: endpoint.hostname,
+      path: endpoint.pathname + endpoint.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(bodyStr)
+      }
+    };
+    const reqG = https.request(options, (r) => {
+      let data = '';
+      r.on('data', c => data += c);
+      r.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (json.error) return reject(new Error(json.error.message || 'Gemini API error'));
+          const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          resolve(text.trim());
+        } catch (e) { reject(e); }
+      });
+    });
+    reqG.on('error', reject);
+    reqG.write(bodyStr);
+    reqG.end();
+  });
+}
 
 server.listen(PORT, () => {
   console.log(`HDRG Pro Plus Downloader running at: http://localhost:${PORT}`);
