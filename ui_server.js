@@ -871,16 +871,16 @@ const HTML_CONTENT = `<!DOCTYPE html>
     <div class="main-panel">
 
       <!-- Drama Details -->
-      <div class="drama-banner" id="mainBanner" style="display: none;">
-        <img id="bannerCover" class="banner-cover" src="">
+      <div class="drama-banner" id="mainBanner">
+        <img id="bannerCover" class="banner-cover" src="https://p6-novel.byteimg.com/novel-pic/973dad4339e00fa9a5d1bf71e6431245~tplv-shrink:640:0.image">
         <div class="banner-details">
           <div>
-            <h1 id="bannerTitle" class="banner-title"></h1>
-            <p id="bannerKhmer" class="banner-subtitle"></p>
+            <h1 id="bannerTitle" class="banner-title">万妖图录传第十四季</h1>
+            <p id="bannerKhmer" class="banner-subtitle">រឿងភាគខ្លីពិសេស</p>
             <div class="banner-meta">
-              <span id="bannerId"></span>
+              <span id="bannerId">Series ID: 7702763145030290457</span>
               <span>•</span>
-              <span id="bannerTotal"></span>
+              <span id="bannerTotal">សរុប: 202 ភាគ</span>
               <span>•</span>
               <span style="color: #68d391; font-weight: bold;">កម្រិត 1080p Full HD</span>
             </div>
@@ -934,7 +934,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
       </div>
 
       <!-- Placeholder before any drama is selected -->
-      <div id="noDramaPlaceholder" style="background: var(--bg-card); border: 2px dashed #233347; border-radius: 12px; padding: 60px 30px; text-align: center; color: #a0aec0; margin-bottom: 24px;">
+      <div id="noDramaPlaceholder" style="display: none; background: var(--bg-card); border: 2px dashed #233347; border-radius: 12px; padding: 60px 30px; text-align: center; color: #a0aec0; margin-bottom: 24px;">
         <div style="font-size: 48px; margin-bottom: 12px;">👈 🎬</div>
         <div style="font-size: 18px; font-weight: bold; color: #fff; margin-bottom: 8px;">សូមជ្រើសរើសរឿងភាគពីបញ្ជីខាងឆ្វេង ឬស្វែងរកខាងលើ</div>
         <div style="font-size: 13px; color: #718096;">ចុចលើរឿងណាមួយក្នុងប្រភេទ (🔥 កំពុងល្បី, 😭 កម្សត់, 💖 Sweet, 👑 CEO...) ដើម្បីផ្ទុកព័ត៌មាន និងទាញយក</div>
@@ -960,7 +960,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
       </div>
 
       <!-- Episodes Section -->
-      <div class="episodes-section" id="episodesSection" style="display: none;">
+      <div class="episodes-section" id="episodesSection">
         <div class="ep-header">
           <div>
             <div class="ep-title">📋 បញ្ជីភាគរឿង (ចុចលើភាគណា ទាញយកភាគនោះភ្លាមៗ)</div>
