@@ -1942,16 +1942,26 @@ Khmer synopsis:`;
 
 // ===== GEMINI API HELPER (HTTPS call) =====
 const https = require('https');
+const GEMINI_MODELS = [
+  'gemini-flash-latest',
+  'gemini-flash-lite-latest',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-pro-latest'
+];
+
 async function testGeminiKey(apiKey) {
   if (!apiKey) throw new Error('សូមបញ្ចូល API Key!');
-  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
   let lastError = null;
-  for (const model of models) {
+  for (const model of GEMINI_MODELS) {
     try {
       return await callGeminiModel(model, apiKey, "Translate '你好' to Khmer in 1 word.");
     } catch (err) {
       lastError = err;
-      if (!err.message.includes('not found') && !err.message.includes('not supported') && !err.message.includes('no longer available')) throw err;
+      const m = err.message || '';
+      if (!m.includes('not found') && !m.includes('not supported') && !m.includes('no longer available')) {
+        throw err;
+      }
     }
   }
   throw lastError;
@@ -1962,17 +1972,17 @@ async function callGemini(prompt) {
   const apiKey = cfg.GEMINI_API_KEY;
   if (!apiKey) throw new Error('មិនទាន់ដាក់ Gemini API Key — ចុច 🔑 Gemini Key ក្នុង topbar');
 
-  // Try available flash models in order
-  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
   let lastError = null;
-
-  for (const model of models) {
+  for (const model of GEMINI_MODELS) {
     try {
       const result = await callGeminiModel(model, apiKey, prompt);
       return result;
     } catch (err) {
       lastError = err;
-      if (!err.message.includes('not found') && !err.message.includes('not supported') && !err.message.includes('no longer available')) throw err;
+      const m = err.message || '';
+      if (!m.includes('not found') && !m.includes('not supported') && !m.includes('no longer available')) {
+        throw err;
+      }
     }
   }
   throw lastError;
