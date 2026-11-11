@@ -3,6 +3,15 @@ const fs = require('fs');
 const path = require('path');
 const { spawn, execSync, exec } = require('child_process');
 const { fetchPlayUrlSingle } = require('./hongguo-drama/src/native/hongguo');
+
+// Non-blocking async curl helper for high-speed multi-threaded downloading
+function runCurlAsync(args) {
+  return new Promise((resolve) => {
+    const child = spawn('curl.exe', args, { stdio: 'ignore' });
+    child.on('close', (code) => resolve(code === 0));
+    child.on('error', () => resolve(false));
+  });
+}
 const { searchHongguo } = require('./hongguo-drama/src/native/hongguo-search');
 const { readRouterData } = require('./hongguo-drama/src/native/catalog');
 
@@ -367,10 +376,10 @@ async function fetchEpisodeListSafe(seriesId) {
 
   try {
     const tempFile = path.join(__dirname, `temp_detail_${sid}.html`);
-    execSync(`curl.exe -s -L -m 15 "https://hongguoduanju.com/detail?series_id=${sid}" -o "${tempFile}"`);
+    await runCurlAsync(['-s', '-L', '-m', '15', `https://hongguoduanju.com/detail?series_id=${sid}`, '-o', tempFile]);
     if (fs.existsSync(tempFile) && fs.statSync(tempFile).size > 10000) {
       html = fs.readFileSync(tempFile, 'utf8');
-      fs.unlinkSync(tempFile);
+      try { fs.unlinkSync(tempFile); } catch (_) {}
     }
   } catch (_) {}
 
@@ -455,7 +464,7 @@ async function smartResolve(input) {
 }
 
 async function runBatchDownload(job) {
-  const { seriesId, selectedEps, autoMerge, workers = 4 } = job;
+  const { seriesId, selectedEps, autoMerge, workers = 6 } = job;
   try {
     broadcastProgress({ type: 'global', status: 'info', message: 'កំពុងទាញយកព័ត៌មានភាគរឿង...', progress: 5 });
     const info = await fetchEpisodeListSafe(seriesId);
@@ -549,8 +558,8 @@ async function runBatchDownload(job) {
           if (job.cancelled) break;
           try {
             broadcastProgress({ type: 'episode', epNum, status: 'downloading', percent: 45 });
-            execSync(`curl.exe -s -L --connect-timeout 8 -m 120 "${u}" -o "${tempEncrypted}"`);
-            if (fs.existsSync(tempEncrypted) && fs.statSync(tempEncrypted).size > 500000) {
+            const ok = await runCurlAsync(['-s', '-L', '--connect-timeout', '8', '-m', '120', u, '-o', tempEncrypted]);
+            if (ok && fs.existsSync(tempEncrypted) && fs.statSync(tempEncrypted).size > 500000) {
               success = true;
               break;
             }
@@ -665,6 +674,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HDRG Pro Plus Studio - All-in-One Downloader</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎬</text></svg>">
   <style>
     :root {
       --bg-main: #0c1017;
@@ -1341,7 +1351,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
       fetch('/api/start-download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ seriesId: currentDrama.seriesId, selectedEps: eps, autoMerge, workers: 4 })
+        body: JSON.stringify({ seriesId: currentDrama.seriesId, selectedEps: eps, autoMerge, workers: 6 })
       });
     }
 
@@ -1680,6 +1690,11 @@ const server = http.createServer(async (req, res) => {
     return res.end(HTML_CONTENT);
   }
 
+  if (url.pathname === '/favicon.ico') {
+    res.writeHead(200, { 'Content-Type': 'image/svg+xml' });
+    return res.end('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🎬</text></svg>');
+  }
+
   // Config API: Get Key Status
   if (url.pathname === '/api/config' && req.method === 'GET') {
     const cfg = loadConfig();
@@ -1817,6 +1832,7 @@ const server = http.createServer(async (req, res) => {
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive'
     });
+    res.write('data: {"type":"init","message":"⚡ បានភ្ជាប់ប្រព័ន្ធទាញយកល្បឿនលឿន (Turbo Multi-threaded)"}\n\n');
     const clientId = Date.now();
     const newClient = { id: clientId, res };
     progressClients.push(newClient);
