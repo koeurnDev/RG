@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Executables & Binaries
+*.exe
+*.dll
+*.node
+*.zip
+*.tar
+*.gz
+build/ffmpeg/
+**/build/ffmpeg/
+hongguo-downloader-*.exe
+
+# Media, video, and audio files (ONLY CODE ALLOWED)
+*.mp4
+*.enc
+*.mp3
+*.wav
+*.aac
+*.m4a
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.gif
+*.srt
+*.svg
+
+# Temporary files & downloaded drama folders
+装穷提亲，娶到全家嫌弃的她/
+一念沉沦，霍总心动了/
+**/temp_*
+temp_*
+*.tmp
+*.temp
+detail_page.html
+
+# System & IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,103 @@
+# 红果短剧 6.9 源码候选：公开源码排除依赖、构建产物与本地运行资料。
+/*-small.png
+
+# 依赖
+node_modules/
+dist/
+dist-react/
+
+# 内置的 ffmpeg 二进制（约 167MB，从网络获取，不纳入版本管理）
+# 打包前执行：node scripts/setup-ffmpeg.js 或手动放入 build/ffmpeg/
+# 注意：许可证文本（*.txt / COPYING.* / LICENSE.md）必须随源码保留，
+#       因此这里只忽略目录内容，再用反向规则把它们重新纳入。
+build/ffmpeg/*
+!build/ffmpeg/*.txt
+!build/ffmpeg/COPYING.*
+!build/ffmpeg/LICENSE.md
+!build/ffmpeg/LIBREMPEG-*
+
+# 构建与打包输出
+release/
+out/
+.webpack/
+*.asar
+*.exe
+*.dmg
+*.app
+*.AppImage
+
+# 临时文件与缓存
+.zcode/
+.vscode/
+.idea/
+*.log
+npm-debug.log*
+yarn-debug.log*
+*.tmp
+.cache/
+.npm-cache/
+.electron-cache/
+.eb-cache/
+
+# 本地配置
+config.json
+settings.json
+
+# 本地状态与开发记录不进入公开源码
+.DS_Store
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.db
+*.sqlite*
+*.session*
+data.json
+danmaku-client.json
+/data/
+/sessions/
+.migration-incomplete
+*.importing
+*.db-*
+downloads/
+logs/
+outputs/
+work/
+task_plan.md
+findings.md
+progress.md
+HANDOFF.md
+graphify-out/
+红果视频刷访问量/
+
+# Local signed release output
+dist-signed/
+
+.planning/
+*.bak
+*.backup
+
+# Windows build records
+WINDOWS_HANDOFF.md
+media/
+
+# Local release and preview material
+verification/
+rollback/
+dist-local/
+HANDOFF.md
+
+.local/
+.tokensave/
+.venv/
+venv/
+__pycache__/
+*.pyc
+backups/
+
+# Recreated and hash-checked by setup:software.
+/public/software
+
+/.superpowers/

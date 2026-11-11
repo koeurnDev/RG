@@ -1,0 +1,23 @@
+.announcement-mask { position: fixed; inset: 0; z-index: 1100; display: grid; place-items: center; padding: 64px 24px 24px; background: var(--scrim); }
+.announcement-dialog { width: min(520px, 100%); max-height: 100%; overflow-y: auto; padding: 28px; background: var(--bg-card); color: var(--text-primary); border-radius: 16px; box-shadow: var(--shadow-lg); }
+.announcement-heading { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 20px; }
+.announcement-heading h2 { flex: 1; margin: 0; font-size: 20px; line-height: 1.45; overflow-wrap: anywhere; }
+.announcement-heading .icon-btn { flex-shrink: 0; }
+.announcement-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.85; }
+.announcement-paragraph { margin: 0; }
+.announcement-paragraph + .announcement-paragraph { margin-top: 1.85em; }
+.announcement-link { color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; }
+button.announcement-link { border: 0; background: transparent; padding: 0; text-align: left; }
+.announcement-purchase-link { display: block; border-radius: 8px; }
+.announcement-purchase-link:hover { background: var(--accent-soft); }
+.announcement-urgent { margin: -8px 0 16px; color: var(--danger); font-weight: 600; }
+.announcement-hint { margin: 22px 0 0; font-size: 12px; line-height: 1.7; color: var(--text-secondary); }
+.announcement-copy-status { margin: 12px 0 0; font-size: 13px; color: var(--text-secondary); }
+.announcement-error { margin: 12px 0 0; font-size: 13px; color: var(--danger); user-select: text; }
+.announcement-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+.announcement-actions .btn { flex: 1; min-height: 42px; white-space: normal; }
+@media (max-width: 520px) {
+  .announcement-mask { padding: 56px 16px 16px; }
+  .announcement-dialog { padding: 24px 20px; }
+  .announcement-actions { flex-direction: column; }
+}

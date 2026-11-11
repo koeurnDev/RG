@@ -1,0 +1,18 @@
+# Hongguo Drama 6.9: release source.
+**
+!Dockerfile
+!package.json
+!package-lock.json
+!LICENSE
+!NOTICE
+!THIRD-PARTY-NOTICES.md
+!server/
+!server/**
+!src/
+!src/native/
+!src/native/**
+!build/
+!build/ffmpeg/
+!build/ffmpeg/linux-x64/
+!build/ffmpeg/linux-x64/**
+server/**/*.test.cjs

@@ -1,0 +1,27 @@
+.comment-danmaku { position: absolute; inset: 0; z-index: 3; pointer-events: none; overflow: hidden; }
+.comment-danmaku-item { position: absolute; top: 0; left: 0; white-space: nowrap; line-height: 1.25; font-weight: 600; color: #fff; text-shadow: 0 1px 3px #000, 1px 0 2px #000, -1px 0 2px #000; will-change: transform; }
+.comment-danmaku-static .comment-danmaku-item { max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; will-change: auto; }
+.player-controls-danmaku { display: flex; align-items: center; gap: 2px; }
+.player-controls .danmaku-icon-button { flex: none; }
+.danmaku-symbol { position: relative; display: block; width: 18px; height: 20px; font-size: 16px; line-height: 18px; font-weight: 500; }
+.danmaku-state-mark { position: absolute; right: -1px; bottom: -1px; width: 7px; height: 5px; border-radius: 4px; background: currentColor; opacity: .5; }
+.danmaku-enabled .danmaku-state-mark { background: var(--accent); opacity: 1; }
+.danmaku-settings-mark { position: absolute; right: -3px; bottom: -2px; display: flex; padding: 1px; border-radius: 50%; background: #242424; }
+.danmaku-settings { position: absolute; bottom: calc(100% + 4px); left: clamp(8px, 120px, calc(100% - 304px)); width: min(296px, calc(100% - 16px)); overflow-y: auto; overscroll-behavior: contain; padding: 12px 14px; border-radius: 10px; background: var(--bg-elevated); color: var(--text-primary); box-shadow: 0 4px 22px rgba(0, 0, 0, .22); pointer-events: auto; }
+.danmaku-settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; }
+.danmaku-settings p { margin: 8px 0 12px; color: var(--text-secondary); font-size: 11px; line-height: 1.6; }
+.danmaku-settings label { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-top: 12px; font-size: 12px; }
+.danmaku-settings output { font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.danmaku-settings input[type="range"] { width: 100%; height: 20px; margin: 0; }
+.danmaku-settings select { min-height: 32px; max-width: 150px; padding: 3px 7px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--bg-input); color: var(--text-primary); font: inherit; }
+.danmaku-settings-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.player-controls .danmaku-settings button { color: var(--text-primary); font-size: 12px; }
+.player-controls .danmaku-settings button:hover { background: var(--bg-inset); }
+.player-controls .danmaku-settings :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 620px) { .player-controls-row { flex-wrap: wrap; gap: 3px; } .player-controls-volume input { width: 42px; } }
+@media (prefers-reduced-motion: reduce) { .player-controls { transition: none; } }
+
+.danmaku-settings textarea { width: 100%; min-height: 64px; resize: vertical; padding: 7px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--bg-input); color: var(--text-primary); font: inherit; line-height: 1.5; }
+.danmaku-filter-toggle input { width: 16px; height: 16px; accent-color: var(--accent); }
+
+.comment-danmaku-status { position: absolute; top: 12px; left: 12px; max-width: calc(100% - 24px); padding: 4px 8px; border-radius: 6px; background: rgba(0, 0, 0, .65); color: #fff; font-size: 12px; line-height: 1.5; }

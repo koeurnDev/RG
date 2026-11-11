@@ -1,0 +1,50 @@
+.drama-feed { max-width: 1100px; margin: 0 auto; color: var(--text-primary); }
+.drama-feed-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 22px; }
+.drama-feed-header h2 { margin: 0; font-size: 28px; font-weight: 700; }
+.drama-feed .source-control { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; white-space: nowrap; }
+.drama-feed .source-control select { width: auto; min-width: 112px; }
+.drama-feed-categories { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 24px; padding-bottom: 18px; border-bottom: 1px solid var(--border-default); }
+.drama-feed-categories .drama-random-tab { margin-left: 24px; }
+.drama-feed-list-meta { display: flex; justify-content: space-between; gap: 12px; margin: 16px 0; color: var(--text-secondary); font-size: 12px; }
+.drama-feed-list-meta > span { font-size: 11px; }
+.drama-feed-feature { display: flex; align-items: center; gap: 32px; padding: 26px; border-radius: 14px; background: var(--bg-card); }
+.drama-poster { width: 192px; aspect-ratio: 3 / 4; flex-shrink: 0; overflow: hidden; border-radius: 12px; background: var(--bg-inset); }
+.drama-poster img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.drama-poster-fallback { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 10px; color: var(--text-secondary); font-size: 11px; }
+.drama-feed-copy { min-width: 0; flex: 1; }
+.drama-feed-copy h3 { margin: 9px 0 12px; font-size: 28px; line-height: 1.4; letter-spacing: -.025em; overflow-wrap: anywhere; text-wrap: balance; }
+.drama-feed-rank { color: var(--accent-text); font-size: 12px; font-weight: 500; }
+.drama-feed-tags { color: var(--text-secondary); font-size: 12px; line-height: 1.8; }
+.drama-feed-intro { max-width: 65ch; margin-top: 16px; color: var(--text-secondary); line-height: 1.8; font-size: 13px; }
+.drama-feed-play-note { margin: 24px 0 14px; color: var(--text-secondary); font-size: 12px; line-height: 1.8; }
+.drama-feed-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.drama-feed-navigation { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 16px 0 26px; }
+.drama-feed-navigation > span { color: var(--text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
+.drama-feed-navigation strong { color: var(--text-primary); font-weight: 600; }
+.drama-feed-upcoming h4 { margin: 0 0 12px; font-size: 13px; font-weight: 600; }
+.drama-feed-upcoming-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.drama-feed-next { display: flex; align-items: center; min-width: 0; gap: 10px; padding: 6px; margin: -6px; background: transparent; border: 0; border-radius: 9px; text-align: left; }
+.drama-feed-next:hover:not(:disabled) { background: var(--bg-hover); }
+.drama-feed-next .drama-poster { width: 46px; border-radius: 6px; }
+.drama-feed-next .drama-poster-fallback > span { display: none; }
+.drama-feed-next .drama-poster-fallback svg { width: 22px; }
+.drama-feed-next > span { min-width: 0; }
+.drama-feed-next strong { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 12px; font-weight: 500; line-height: 1.6; overflow-wrap: anywhere; }
+.drama-feed-next small { display: block; margin-top: 4px; color: var(--text-secondary); font-size: 10px; }
+.drama-feed-source, .drama-feed-hint { color: var(--text-secondary); font-size: 11px; line-height: 1.8; margin-top: 22px; }
+.drama-feed-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; min-height: 330px; text-align: center; padding: 32px; }
+.drama-feed-state h3, .drama-feed-state p { margin: 0; }
+.drama-feed-state p { color: var(--text-secondary); line-height: 1.8; max-width: 60ch; overflow-wrap: anywhere; }
+.drama-feed-updating { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; color: var(--text-secondary); font-size: 12px; }
+.drama-feed-updating .btn { margin-left: auto; }
+.drama-feed-notice { margin: 0 0 14px; color: var(--text-secondary); font-size: 12px; line-height: 1.8; }
+.drama-feed-update-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--danger-border); border-radius: 8px; background: var(--danger-bg); color: var(--danger); font-size: 12px; line-height: 1.8; }
+.drama-feed-update-error span { overflow-wrap: anywhere; }
+.drama-feed-update-error .btn { flex-shrink: 0; }
+.drama-feed button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.drama-text-button { border: 0; border-radius: 5px; background: transparent; padding: 7px 2px; color: var(--accent-text); text-decoration: underline; text-underline-offset: 4px; font-size: 12px; }
+.drama-text-button:hover { color: var(--accent-hover); }
+.drama-inline-error, .random-drama-result-copy > .drama-inline-error { color: var(--danger); line-height: 1.8; font-size: 12px; margin-top: 12px; overflow-wrap: anywhere; }
+@media (max-width: 980px) { .drama-feed-feature { gap: 24px; padding: 24px; } .drama-feed-feature > .drama-poster { width: 158px; } .drama-feed-upcoming-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 20px; } }
+@media (max-width: 600px) { .drama-feed-header { align-items: flex-start; gap: 12px; flex-wrap: wrap; } .drama-feed-categories .drama-random-tab { margin-left: 0; } .drama-feed-feature { align-items: flex-start; padding: 18px; gap: 18px; } .drama-feed-feature > .drama-poster { width: 112px; } .drama-feed-play-note { margin-top: 16px; } .drama-feed-list-meta { flex-wrap: wrap; gap: 4px; } }
+@media (max-width: 400px) { .drama-feed-feature { flex-direction: column; align-items: center; } .drama-feed-copy { width: 100%; } .drama-feed-feature > .drama-poster { width: 145px; } .drama-feed-upcoming-list { gap: 16px; } }

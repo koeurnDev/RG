@@ -1,0 +1,33 @@
+.random-drama-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 20px 0; }
+.random-drama-toolbar > p { color: var(--text-secondary); }
+.random-drama-toolbar label { display: flex; align-items: center; gap: 10px; color: var(--text-secondary); font-size: 12px; }
+.random-drama-toolbar select { min-height: 36px; padding: 6px 28px 6px 10px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--bg-input); color: var(--text-primary); }
+.random-drama-stage { display: flex; justify-content: center; align-items: center; gap: 32px; min-height: 345px; padding: 24px; background: var(--bg-card); border-radius: 14px; }
+.random-drama-ritual { text-align: center; flex-shrink: 0; }
+.story-ticket-button { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 0 auto; padding: 0 16px 8px; background: transparent; border: 0; border-radius: 12px; color: var(--accent-text); }
+.story-ticket-button:disabled { opacity: .65; }
+.story-ticket-button:hover:not(:disabled) { background: var(--accent-soft); }
+.story-ticket-button span { font-size: 12px; font-weight: 500; }
+.story-tickets { display: block; width: 185px; height: 208px; transform-origin: 50% 85%; }
+.story-ticket-motion { opacity: .5; }
+.story-tickets.is-shaking { animation: ticket-shake 620ms ease-out; }
+.story-tickets.is-shaking .story-tickets-sticks { animation: ticket-lift 620ms ease-out; }
+@keyframes ticket-shake { 0%, 100% { transform: rotate(0); } 18%, 54% { transform: rotate(-10deg); } 36%, 72% { transform: rotate(9deg); } 88% { transform: rotate(-3deg); } }
+@keyframes ticket-lift { 0%, 100% { transform: translateY(0); } 35%, 65% { transform: translateY(-9px); } }
+.random-drama-opening h3 { margin: 16px 0 5px; font-size: 22px; letter-spacing: -.02em; }
+.random-drama-opening p { color: var(--text-secondary); line-height: 1.8; }
+.random-drama-result { display: flex; align-items: center; gap: 24px; min-width: 0; flex: 1; max-width: 610px; }
+.random-drama-result .drama-poster { width: clamp(120px, 14vw, 170px); }
+.random-drama-result-copy { min-width: 0; }
+.random-drama-result-copy h3 { font-size: 24px; line-height: 1.4; overflow-wrap: anywhere; margin: 7px 0 10px; }
+.random-drama-result-copy > p { color: var(--text-secondary); font-size: 12px; line-height: 1.8; }
+.random-drama-result-copy .drama-source-label { color: var(--accent-text); }
+.random-drama-tags { margin-top: 6px; }
+.random-drama-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+.random-drama-status { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px 14px; margin-top: 18px; color: var(--text-secondary); font-size: 12px; text-align: center; min-height: 36px; }
+.random-drama-status p { display: flex; align-items: center; gap: 7px; line-height: 1.8; }
+.random-drama-note { margin-top: 14px; padding-top: 16px; border-top: 1px solid var(--border-muted); color: var(--text-secondary); font-size: 11px; line-height: 1.8; text-align: center; }
+@media (max-width: 1080px) { .random-drama-stage.has-result { gap: 16px; padding: 24px 16px; } .has-result .story-tickets { width: 145px; height: 164px; } .has-result .story-ticket-button { padding: 0 4px 8px; } .random-drama-result { gap: 16px; } }
+@media (max-width: 820px) { .random-drama-stage.has-result { flex-direction: column; } .has-result .random-drama-ritual { display: none; } .random-drama-result { width: 100%; max-width: 540px; } .random-drama-result .drama-poster { width: 140px; } }
+@media (max-width: 520px) { .random-drama-stage { padding: 20px 16px; } .random-drama-result { align-items: flex-start; gap: 14px; } .random-drama-result .drama-poster { width: 105px; } .random-drama-actions { gap: 8px; margin-top: 14px; } .random-drama-toolbar { align-items: flex-start; } }
+@media (prefers-reduced-motion: reduce) { .story-tickets.is-shaking, .story-tickets.is-shaking .story-tickets-sticks { animation: none; } }

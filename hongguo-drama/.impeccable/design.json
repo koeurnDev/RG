@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "name": "红果短剧",
+  "mode": "operate",
+  "colors": {"canvas": "#faf9f7", "sidebar": "#f0eeeb", "surface": "#ffffff", "text": "#252523", "secondary": "#686661", "accent": "#c8383d", "selection": "#fae9e7", "border": "#e4e1dc"},
+  "typography": {"family": "system-ui, PingFang SC, Microsoft YaHei, sans-serif", "heading": 28, "body": 13, "label": 12, "caption": 11},
+  "spacing": [4, 8, 12, 16, 20, 24, 32],
+  "radii": {"control": 7, "poster": 12, "dialog": 16},
+  "layout": {"sidebar": 214, "toolbar": 48, "macControlsReserved": 58}
+}

@@ -1,0 +1,754 @@
+.player-container {
+  max-width: 1000px;
+  margin: 0 auto;
+  color: var(--text-primary);
+}
+
+.player-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.player-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.player-title h2 {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.player-header-right {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+
+
+.player-stat {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.btn-autonext-on {
+  border-color: var(--accent) !important;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 剧集选择行（替代原来会越堆越长的横条） */
+.player-series-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 9px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+}
+
+.player-series-current {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.player-series-label {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.player-series-name {
+  font-size: 15px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.series-picker-btn {
+  flex-shrink: 0;
+}
+
+.sequel-finder { margin: 16px 0 12px; flex-shrink: 0; }
+.sequel-finder-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sequel-finder-results { margin-top: 8px; font-size: 13px; color: var(--text-secondary); }
+.sequel-finder-results p { margin: 4px 0; }
+.sequel-finder-error { color: var(--danger); }
+.sequel-finder-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; max-height: 160px; overflow-y: auto; }
+.sequel-finder-list li { min-width: 0; max-width: 100%; }
+.sequel-finder-list .btn { white-space: normal; text-align: left; overflow-wrap: anywhere; }
+.layout-portrait .sequel-finder { max-height: 30%; overflow-y: auto; }
+
+.series-picker-btn.open {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.series-count {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* 剧集管理面板 */
+.series-picker {
+  margin-bottom: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.series-picker-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.series-picker-head .input-field {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+.series-picker-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.series-picker-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.series-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-muted);
+  transition: background 0.12s;
+}
+
+.series-row:last-child { border-bottom: none; }
+
+.series-row:hover { background: var(--bg-inset); }
+
+.series-row.active {
+  background: var(--accent-soft);
+  border-left: none;
+}
+
+.series-row-cover {
+  width: 34px;
+  height: 45px;
+  border-radius: 5px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--bg-inset);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+}
+
+.series-row-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.series-row-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.series-row-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.series-row-sub {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+.series-row-cur {
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.series-row-del {
+  flex-shrink: 0;
+}
+
+.series-picker-foot {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border-muted);
+  background: var(--bg-inset);
+}
+
+/* 播放占位区按钮组 */
+.player-placeholder-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* 正在在线播放的集标记 */
+.ep-online-dot {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ffa000;
+  z-index: 2;
+}
+
+.player-empty-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+/* 兼容模式浮层（解码失败提示 / 转码进度） */
+.compat-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  background: rgba(12, 14, 18, 0.88);
+  color: #e8eaed;
+  z-index: 5;
+  overflow-y: auto;
+}
+
+.compat-overlay p {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.compat-overlay-sub {
+  font-size: 12.5px;
+  color: #9aa0aa;
+  max-width: 460px;
+  line-height: 1.6;
+}
+
+.compat-overlay .player-placeholder-actions {
+  margin-top: 4px;
+}
+
+.compat-overlay .btn-outline {
+  color: #e8eaed;
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
+.compat-overlay .btn-outline:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+/* 占用统计与删除确认 */
+.series-picker-usage {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  align-self: center;
+  min-width: 140px;
+}
+
+.series-picker-usage b {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.btn-danger-text {
+  color: var(--danger) !important;
+  border-color: var(--danger-border) !important;
+}
+
+.btn-danger-text:hover {
+  background: var(--danger-bg) !important;
+}
+
+.player-confirm-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: var(--scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: proxy-mask-in 0.15s ease-out;
+}
+
+.player-confirm {
+  width: 100%;
+  max-width: 440px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 20px;
+  animation: proxy-modal-in 0.18s ease-out;
+}
+
+.player-confirm-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--danger);
+  margin-bottom: 12px;
+}
+
+.player-confirm-msg {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.player-confirm-msg p {
+  margin: 0 0 6px;
+}
+
+.player-confirm-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+
+/* 播放舞台 */
+.player-stage {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  position: relative;
+  margin-bottom: 12px;
+}
+
+.player-floating-slot { width: 100%; min-width: 0; }
+.player-floating-host { display: contents; }
+.player-floating-placeholder { display: grid; place-content: center; gap: 12px; min-height: 220px; padding: 24px; border: 1px solid var(--border); border-radius: 12px; text-align: center; color: var(--text-secondary); }
+
+.player-video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #000;
+}
+
+.player-transition-frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; pointer-events: none; z-index: 2; }
+.player-placeholder.player-placeholder-over-frame { background: rgba(0, 0, 0, .25); }
+
+.player-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #c9ccd1;
+  background: #20211f;
+  text-align: center;
+  padding: 20px;
+}
+
+.player-placeholder p {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.player-placeholder-sub {
+  font-size: 12.5px;
+  color: #8a8f99;
+}
+
+/* 深色占位区里的描边按钮：默认深色文字在深底上不可见，这里改用浅色 */
+.player-placeholder .btn-outline {
+  color: #e8eaed;
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
+.player-placeholder .btn-outline:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+.player-wait-bar {
+  width: min(320px, 70%);
+  height: 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+}
+
+.player-wait-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+
+}
+
+/* 当前集信息 */
+.player-now {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+}
+
+.player-now-title {
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.player-now-sub {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-now-status {
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 4px;
+  font-weight: 500;
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+}
+
+.player-now-status.status-completed { background: var(--success-bg); color: var(--success); }
+.player-now-status.status-downloading { background: var(--accent-soft); color: var(--accent); }
+
+/* 分集网格 */
+.player-episodes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.ep-chip {
+  position: relative;
+  height: 40px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ep-chip:hover {
+  border-color: var(--accent);
+}
+
+.ep-num {
+  position: relative;
+  z-index: 2;
+  font-variant-numeric: tabular-nums;
+}
+
+.ep-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  color: var(--success);
+  z-index: 2;
+}
+
+/* 未下载：灰色虚线 */
+.ep-missing {
+  border-style: dashed;
+  color: var(--text-tertiary);
+}
+
+/* 下载中：蓝色进度填充 */
+.ep-downloading {
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+
+.ep-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--accent);
+
+  z-index: 1;
+}
+
+.ep-pending {
+  color: var(--text-secondary);
+}
+
+.ep-failed,
+.ep-stopped {
+  color: var(--danger);
+  border-color: var(--danger-border);
+}
+
+/* 已完成：绿色 */
+.ep-completed {
+  border-color: var(--success-border);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* 当前集：高亮描边 */
+.ep-current {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--focus-soft);
+  background: var(--accent-soft);
+}
+
+.player-tips {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.6;
+}
+
+.player-empty {
+  text-align: center;
+  padding: 80px 20px;
+  color: var(--text-tertiary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.player-empty-sub {
+  font-size: 13px;
+}
+
+.player-title > svg { display: none; }
+.player-header { margin-bottom: 26px; align-items: flex-start; }
+.player-header-right { gap: 6px; justify-content: flex-end; }
+.player-header-right .btn { font-size: 11px; padding: 6px 9px; min-height: 31px; }
+.player-stat { flex-basis: 100%; text-align: right; font-size: 11px; margin-bottom: 4px; }
+.player-series-row { background: transparent; border: 0; padding: 0 0 14px; margin-bottom: 0; }
+.player-series-name { font-size: 19px; font-weight: 600; }
+.player-series-label { font-size: 11px; }
+.player-stage { border-radius: 12px; background: #191a18; max-height: 65vh; }
+.player-placeholder { gap: 16px; }
+.player-placeholder > svg { color: #858781; stroke-width: 1.3; }
+.player-placeholder p { font-size: 17px; font-weight: 500; }
+.player-placeholder-sub, .compat-overlay-sub { color: #b5b6b0; line-height: 1.7; }
+.player-now { background: transparent; border: 0; border-radius: 0; padding: 10px 0 18px; }
+.player-tips { color: var(--text-secondary); font-size: 11px; line-height: 1.8; }
+.series-row.active { background: var(--accent-soft); }
+.series-picker { border-radius: 12px; box-shadow: none; }
+.player-episodes { gap: 8px; }
+.player-header .btn-autonext-on { background: var(--accent-soft); border-color: transparent !important; }
+.player-now-status.status-downloading { background: var(--accent-soft); }
+@media (max-width: 1080px) { .player-header { flex-direction: column; gap: 15px; } .player-header-right { justify-content: flex-start; } .player-stat { flex-basis: auto; text-align: left; margin: 0 8px 0 0; } }
+
+.ep-chip:disabled { flex-direction: column; gap: 2px; cursor: not-allowed; background: var(--bg-inset); color: var(--text-secondary); }
+.ep-lock-label { display: block; font-size: 10px; line-height: 1.2; font-weight: 400; }
+
+.player-episode-panel { min-width: 0; }
+.portrait-episode-heading { display: none; }
+.layout-portrait .player-header { gap: 10px; margin-bottom: 14px; }
+.layout-portrait .player-series-row { justify-content: flex-start; flex-wrap: wrap; gap: 12px 20px; padding-bottom: 12px; }
+.layout-portrait .player-viewing-layout { display: grid; grid-template-columns: minmax(0, 1fr) 128px; gap: 14px; align-items: start; }
+.layout-portrait .player-stage:not(:fullscreen) { width: 100%; height: 100%; aspect-ratio: auto; max-height: none; margin: 0; min-height: 0; }
+.layout-portrait .player-video { object-fit: contain; }
+.layout-portrait .player-episode-panel { height: 100%; min-height: 0; max-height: none; overflow-y: auto; padding: 0 3px 6px; }
+.layout-portrait .portrait-episode-heading { display: block; font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+.layout-portrait .player-now { padding: 0 0 12px; gap: 6px; }
+.layout-portrait .player-now-sub { flex-basis: 100%; }
+.layout-portrait .player-episodes { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: none; gap: 6px; }
+.layout-portrait .player-tips { margin-block: 10px; }
+.layout-portrait .player-stage:not(:fullscreen) .player-controls-bar { padding: 20px 8px 8px; }
+.layout-portrait .player-stage:not(:fullscreen) .player-controls-row { flex-wrap: wrap; gap: 3px; }
+.layout-portrait .player-stage:not(:fullscreen) .player-controls-volume input { width: 42px; }
+.layout-portrait .player-stage:not(:fullscreen) .player-controls-time { flex: 1; }
+.layout-portrait .player-stage:not(:fullscreen) .player-controls-menu { position: fixed; bottom: 24px; right: 16px; z-index: 20; }
+@media (max-width: 480px) {
+  .layout-portrait .player-viewing-layout { grid-template-columns: minmax(0, 1fr) 102px; gap: 8px; }
+}
+
+.player-series-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.portrait-episodes-toggle { display: none; }
+.player-management { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 16px; padding: 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 9px; }
+.player-management[hidden] { display: none; }
+.layout-portrait .player-container { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.layout-portrait .player-header { position: relative; margin: 0; }
+.layout-portrait .player-title { display: none; }
+.layout-portrait .player-header-right { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 8px; }
+.layout-portrait .player-header-right .player-stat { display: none; }
+.layout-portrait .player-management { flex-shrink: 0; max-height: 35%; overflow: auto; }
+.layout-portrait .portrait-episodes-toggle { display: inline-flex; }
+.layout-portrait .player-series-row { flex-shrink: 0; min-height: 42px; padding: 0 0 8px; gap: 8px; }
+.layout-portrait .player-series-label { display: none; }
+.layout-portrait .series-count { display: none; }
+.layout-portrait .series-picker { flex-shrink: 0; max-height: 45%; overflow: auto; }
+.layout-portrait .player-viewing-layout { flex: 1; min-height: 0; grid-template-columns: minmax(0, 1fr) 108px; gap: 10px; }
+.layout-portrait .player-now { padding-bottom: 8px; }
+.layout-portrait .player-now-status { padding: 2px 5px; }
+.layout-portrait .episodes-collapsed .player-viewing-layout { grid-template-columns: minmax(0, 1fr); }
+.layout-portrait .episodes-collapsed .player-episode-panel { display: none; }
+@media (max-width: 480px) {
+  .layout-portrait .player-viewing-layout { grid-template-columns: minmax(0, 1fr) 90px; gap: 8px; }
+  .layout-portrait .player-series-actions { gap: 4px; }
+  .layout-portrait .player-series-actions .btn { padding-inline: 7px; }
+}
+
+/* Expanding the native window reserves the right column without shrinking the video. */
+.layout-portrait .player-viewing-layout { grid-template-columns: minmax(0, 1fr) 190px; gap: 10px; }
+.layout-portrait .player-episodes { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.layout-portrait .player-episode-panel { display: block; }
+.layout-portrait .player-episode-panel .player-tips { display: none; }
+.layout-portrait .player-now-sub, .layout-portrait .player-now-status { display: none; }
+.player-stage.player-window-fill { position: fixed; inset: 48px 0 0; width: 100%; height: calc(100% - 48px); max-height: none; aspect-ratio: auto; margin: 0; z-index: 15; border-radius: 0; }
+
+/* Width mode follows the available width; only the stage clips the picture. */
+.player-stage[data-picture-mode] .player-video { object-fit: contain; }
+.player-stage[data-picture-mode="width"] .player-video,
+.player-stage[data-picture-mode="width"] .player-transition-frame {
+  position: absolute;
+  inset: auto;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: auto;
+  max-height: none;
+  transform: translateY(-50%);
+}
+
+.player-download-quality { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+.player-download-quality .input-field { width: auto; max-width: 100%; min-height: 31px; padding: 5px 8px; font-size: 12px; }
+.player-download-quality-hint { flex-basis: 100%; margin: 2px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+
+.player-rate-notice {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top));
+  right: max(16px, env(safe-area-inset-right));
+  z-index: 8;
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: rgba(20, 20, 20, .68);
+  color: #fff;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* Keep playback close to the picture; download actions follow episode selection. */
+.player-header { margin-bottom: 16px; gap: 8px; }
+.player-header-right { justify-content: flex-start; gap: 8px; }
+.player-series-current { flex-wrap: wrap; gap: 8px 12px; max-width: 100%; }
+.player-series-current .player-stat { flex-basis: auto; margin: 0; text-align: left; white-space: nowrap; }
+.player-series-row { justify-content: flex-start; flex-wrap: wrap; gap: 12px 20px; padding-bottom: 12px; }
+.player-management { padding: 12px 0 0; margin: 12px 0 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: transparent; }
+.player-footer .community-heading { align-items: flex-start; }
+.player-footer .community-actions { width: 100%; }
+.player-footer .community-actions .sequel-finder,
+.player-footer .community-actions .sequel-finder-actions { display: contents; }
+.player-footer .sequel-finder-results { flex-basis: 100%; order: 1; }
+.player-footer .sequel-finder-actions .btn { font-size: inherit; padding: 8px 14px; }
+.layout-portrait .player-management { max-height: none; overflow: visible; gap: 6px; }
+.layout-portrait .player-management .btn { padding: 6px 8px; }
+.layout-portrait .player-footer { flex-shrink: 0; max-height: 25%; overflow-y: auto; }
+.layout-portrait .player-footer .community-panel { margin-top: 8px; padding-top: 8px; }
+
+.player-series-name { font-size: 26px; font-weight: 650; line-height: 1.3; }
+/* Keep the title actions together when the window changes width. */
+.player-series-actions { flex-wrap: wrap; max-width: 100%; }
+.player-header-right > .btn, .player-header-right > .player-download-quality { flex-shrink: 0; }
+.player-header-right > .player-download-quality { flex-wrap: nowrap; }
+.player-management { display: block; padding-top: 20px; }
+.player-management h3 { margin: 0 0 12px; font-size: 17px; font-weight: 650; }
+.player-management-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.player-management-actions > .input-field { flex: 0 1 auto; width: auto; max-width: 100%; }
+.layout-portrait .player-management-actions { gap: 6px; }
+.player-management { scroll-margin-block: 24px; }
+
+/* Separate quality from the equal-sized playback actions. */
+.player-online-quality-row { display: flex; flex-wrap: wrap; gap: 12px; justify-content: flex-end; margin-bottom: 8px; }
+.player-online-quality-row[hidden] { display: none; }
+.player-online-quality-row .player-download-quality { flex-wrap: nowrap; }
+.layout-landscape .player-online-quality-row { margin-block: 12px 24px; }
+.player-header .player-header-right { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr)); gap: 8px; }
+.player-header-right .player-series-actions { display: contents; }
+.player-header .player-header-right .btn { width: 100%; min-width: 0; min-height: 36px; padding: 6px 8px; font-size: 12px; gap: 7px; justify-content: center; white-space: normal; }
+.player-header-right .btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+.player-header-right .series-count { font-size: inherit; min-width: 0; padding: 0 .35em; }

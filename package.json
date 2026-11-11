@@ -1,0 +1,24 @@
+{
+  "name": "hdrg-pro-downloader",
+  "version": "1.0.0",
+  "description": "Hongguo Short Drama Pro Downloader & AI Dubbing Studio",
+  "main": "ui_server.js",
+  "scripts": {
+    "start": "node ui_server.js",
+    "dev": "node ui_server.js"
+  },
+  "dependencies": {
+    "@andresaya/edge-tts": "^1.9.1",
+    "axios": "^1.7.9"
+  },
+  "keywords": [
+    "hongguo",
+    "drama",
+    "downloader",
+    "dubbing",
+    "ffmpeg",
+    "khmer"
+  ],
+  "author": "koeurnDev",
+  "license": "MIT"
+}

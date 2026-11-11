@@ -1,0 +1,10 @@
+.video-enhancement-filter { position: absolute; width: 0; height: 0; pointer-events: none; }
+.video-enhancement-canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; visibility: hidden; z-index: 1; }
+.player-stage[data-picture-mode="width"] .video-enhancement-canvas { inset: auto; top: 50%; left: 0; width: 100%; height: auto; max-height: none; transform: translateY(-50%); }
+.video-enhancement-settings { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 12px; }
+.player-controls-menu .video-enhancement-settings select { width: 108px; }
+.player-controls-menu .video-enhancement-strength { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.video-enhancement-strength input { flex: 1; min-width: 65px; width: 70px; }
+.video-enhancement-strength output { min-width: 32px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.video-enhancement-note { margin: 9px 0 0; font-size: 11px; line-height: 1.5; color: var(--text-secondary); }
+.video-enhancement-note.enhancement-error { color: var(--text-primary); }

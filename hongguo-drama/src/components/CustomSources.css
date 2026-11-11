@@ -1,0 +1,23 @@
+.custom-sources { margin: 22px 0; padding-top: 22px; padding-bottom: 22px; }
+.custom-sources-heading { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; }
+.custom-sources-heading h3 { font-size: 15px; font-weight: 600; }
+.custom-sources > .settings-hint { margin: 0 0 18px; max-width: 70ch; line-height: 1.8; }
+.custom-source-form { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(200px, 2fr); gap: 14px; border: 0; min-width: 0; }
+.custom-source-form > label { display: flex; flex-direction: column; gap: 7px; min-width: 0; font-size: 12px; }
+.custom-source-form > .custom-source-enabled { flex-direction: row; align-items: center; }
+.custom-source-enabled input { accent-color: var(--primary); }
+.custom-source-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.custom-source-form > .custom-source-actions { justify-content: flex-end; }
+.custom-source-list { margin-top: 18px; }
+.custom-source-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px 0; border-top: 1px solid var(--border-muted); }
+.custom-source-info { flex: 1; min-width: 200px; }
+.custom-source-info strong { font-size: 13px; overflow-wrap: anywhere; }
+.custom-source-info > span { margin-left: 10px; font-size: 11px; color: var(--text-secondary); }
+.custom-source-info p { font-size: 11px; color: var(--text-secondary); overflow-wrap: anywhere; margin-top: 5px; }
+.custom-source-delete { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px; background: var(--danger-bg); border-radius: 8px; }
+.custom-source-delete p { flex: 1 1 260px; color: var(--danger); font-size: 12px; line-height: 1.8; }
+.custom-source-message, .custom-source-error { font-size: 12px; line-height: 1.8; margin-top: 12px; overflow-wrap: anywhere; }
+.custom-source-message { color: var(--success); }
+.custom-source-error { color: var(--danger); }
+.custom-source-error .btn { margin-top: 6px; }
+@media (max-width: 680px) { .custom-source-form { grid-template-columns: 1fr; } .custom-source-form > .custom-source-actions { justify-content: flex-start; } .custom-source-info { flex-basis: 100%; } }
