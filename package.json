@@ -1,24 +1,100 @@
 {
-  "name": "hdrg-pro-downloader",
+  "name": "eza-pro-downloader",
+  "productName": "EZA PRO Downloader",
   "version": "1.0.0",
-  "description": "Hongguo Short Drama Pro Downloader & AI Dubbing Studio",
-  "main": "ui_server.js",
+  "description": "EZA PRO - Short Drama Pro Downloader & Library Manager",
+  "main": "main.js",
   "scripts": {
-    "start": "node ui_server.js",
-    "dev": "node ui_server.js"
+    "start": "node -e \"delete process.env.ELECTRON_RUN_AS_NODE; const { spawn } = require('child_process'); const p = spawn(require('electron'), ['.'], { stdio: 'inherit', windowsHide: false }); p.on('exit', c => process.exit(c || 0));\"",
+    "start:web": "node ui_server.js",
+    "dev": "node ui_server.js",
+    "test": "node --test test-downloader-license.js",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win"
   },
   "dependencies": {
     "@andresaya/edge-tts": "^1.9.1",
     "axios": "^1.7.9"
   },
+  "devDependencies": {
+    "electron": "^45.3.1",
+    "electron-builder": "^26.18.0"
+  },
   "keywords": [
-    "hongguo",
+    "eza-pro",
     "drama",
     "downloader",
-    "dubbing",
     "ffmpeg",
     "khmer"
   ],
-  "author": "koeurnDev",
-  "license": "MIT"
+  "author": "EZA PRO",
+  "license": "MIT",
+  "build": {
+    "appId": "com.ezapro.downloader",
+    "productName": "EZA PRO Downloader",
+    "asar": true,
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "ui_server.js",
+      "cloud-license-config.json",
+      "lib/**/*",
+      "public/**/*",
+      "hongguo-drama/src/native/**/*",
+      "node_modules/**/*",
+      "package.json",
+      "build/icon.png",
+      "LICENSE.txt",
+      "!node_modules/electron/**",
+      "!node_modules/electron-builder/**"
+    ],
+    "extraResources": [
+      {
+        "from": "bin",
+        "to": "bin",
+        "filter": [
+          "ffmpeg.exe",
+          "ffprobe.exe",
+          "yt-dlp.exe",
+          "aria2c.exe",
+          "N_m3u8DL-RE.exe"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "EZA PRO Downloader",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "license": "LICENSE.txt"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-Portable.${ext}"
+    }
+  }
 }

@@ -1,30 +1,46 @@
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
+const fsp = require('fs/promises');
+const os = require('os');
 const path = require('path');
-const { spawn, execSync, exec } = require('child_process');
-const { fetchPlayUrlSingle } = require('./hongguo-drama/src/native/hongguo');
+const { spawn, exec } = require('child_process');
 
-// Non-blocking async curl helper for high-speed multi-threaded downloading
-function runCurlAsync(args) {
-  return new Promise((resolve) => {
-    const child = spawn('curl.exe', args, { stdio: 'ignore' });
-    child.on('close', (code) => resolve(code === 0));
-    child.on('error', () => resolve(false));
-  });
-}
+const axios = require('axios');
+const cloudLicense = require('./lib/cloud-license');
+const { fetchEpisodeList } = require('./hongguo-drama/src/native/hongguo');
 const { searchHongguo } = require('./hongguo-drama/src/native/hongguo-search');
-const { readRouterData } = require('./hongguo-drama/src/native/catalog');
+const { readRouterData, browseList } = require('./hongguo-drama/src/native/catalog');
 
-const PORT = 3000;
-let progressClients = [];
-let currentDownloadJob = null;
-const dramaCache = new Map();
+const { fetchAppPlayUrl, requestJson: appRequestJson } = require('./hongguo-drama/src/native/app-source');
+const { getPlaybackDevice } = require('./hongguo-drama/src/native/playback-device');
 
-// Configuration & Gemini API Key Storage
-const CONFIG_FILE = path.join(__dirname, 'config.json');
+const dl = require('./lib/downloader');
+const sources = require('./lib/sources');
+const ytdlp = require('./lib/ytdlp');
+
+const PORT = Number(process.env.HDRG_PORT || 3000);
+const IS_PACKAGED_CLIENT = process.env.EZA_PACKAGED_CLIENT === '1';
+const DEFAULT_DOWNLOAD_DIR =
+  process.env.EZA_DEFAULT_DOWNLOAD_DIR ||
+  (IS_PACKAGED_CLIENT ? path.join(os.homedir(), 'Videos', 'EZA PRO Downloader') : 'D:\\HDRG');
+const PUBLIC_HTML = path.join(__dirname, 'public', 'index.html');
+const CONFIG_FILE =
+  process.env.HDRG_CONFIG_FILE ||
+  (process.env.EZA_USER_DATA_DIR ? path.join(process.env.EZA_USER_DATA_DIR, 'config.json') : path.join(__dirname, 'config.json'));
 const ENV_FILE = path.join(__dirname, 'hongguo-drama', 'scripts', '.env');
+const ISOLATED_CONFIG_ONLY = process.env.HDRG_ISOLATED === '1' || IS_PACKAGED_CLIENT;
 
-// Parse a .env file and return key-value object
+let progressClients = [];
+const jobsMap = new Map(); // jobId -> job
+const ACTIVE_JOB_STATUSES = new Set(['starting', 'running', 'retrying', 'merging']);
+const MAX_JOB_HISTORY = 30;
+const GLOBAL_DOWNLOAD_SEM = dl.createSemaphore(24);
+const GLOBAL_BYTEVC2_SEM = dl.createSemaphore((os.cpus().length || 4) >= 6 ? 2 : 1);
+const dramaCache = new Map(); // sid -> { timestamp, data }
+const DRAMA_CACHE_TTL_MS = 5 * 60 * 1000;
+
+// ===== Configuration & Gemini Key Storage =====
 function parseEnvFile(filePath) {
   const result = {};
   try {
@@ -37,7 +53,6 @@ function parseEnvFile(filePath) {
       if (eqIdx < 0) continue;
       const key = trimmed.slice(0, eqIdx).trim();
       let val = trimmed.slice(eqIdx + 1).trim();
-      // Strip surrounding quotes (" or ')
       if ((val.startsWith('"') && val.endsWith('"')) ||
           (val.startsWith("'") && val.endsWith("'"))) {
         val = val.slice(1, -1);
@@ -48,20 +63,16 @@ function parseEnvFile(filePath) {
   return result;
 }
 
-// Save/update a key in .env file
 function saveEnvFile(filePath, updates) {
   try {
-    let content = '';
-    if (fs.existsSync(filePath)) {
-      content = fs.readFileSync(filePath, 'utf8');
-    }
+    let content = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : '';
     for (const [key, val] of Object.entries(updates)) {
       const regex = new RegExp(`^${key}=.*$`, 'm');
       const newLine = `${key}="${val}"`;
       if (regex.test(content)) {
         content = content.replace(regex, newLine);
       } else {
-        content = content.trim() ? content.trim() + '\n' + newLine + '\n' : newLine + '\n';
+        content = content.trim() ? `${content.trim()}\n${newLine}\n` : `${newLine}\n`;
       }
     }
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -71,17 +82,21 @@ function saveEnvFile(filePath, updates) {
   }
 }
 
+let customFolderPickerHandler = null;
+function setFolderPickerHandler(handler) {
+  customFolderPickerHandler = typeof handler === 'function' ? handler : null;
+}
+
 function loadConfig() {
-  // Priority: .env file → config.json → process.env
-  const envData = parseEnvFile(ENV_FILE);
-  let cfg = {
+  const envData = ISOLATED_CONFIG_ONLY ? {} : parseEnvFile(ENV_FILE);
+  const cfg = {
     GEMINI_API_KEY: envData.GEMINI_API_KEY || process.env.GEMINI_API_KEY || '',
-    DOWNLOAD_DIR: envData.DOWNLOAD_DIR || 'D:\\HDRG'
+    DOWNLOAD_DIR: envData.DOWNLOAD_DIR || DEFAULT_DOWNLOAD_DIR,
   };
   try {
     if (fs.existsSync(CONFIG_FILE)) {
       const parsed = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-      if (!cfg.GEMINI_API_KEY && parsed.GEMINI_API_KEY) cfg.GEMINI_API_KEY = parsed.GEMINI_API_KEY;
+      if (parsed.GEMINI_API_KEY) cfg.GEMINI_API_KEY = parsed.GEMINI_API_KEY;
       if (parsed.DOWNLOAD_DIR) cfg.DOWNLOAD_DIR = parsed.DOWNLOAD_DIR;
     }
   } catch (_) {}
@@ -90,7 +105,7 @@ function loadConfig() {
 
 function getDownloadDir() {
   const cfg = loadConfig();
-  const dir = cfg.DOWNLOAD_DIR || 'D:\\HDRG';
+  const dir = cfg.DOWNLOAD_DIR || DEFAULT_DOWNLOAD_DIR;
   try {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   } catch (_) {}
@@ -100,51 +115,67 @@ function getDownloadDir() {
 function saveConfig(cfg) {
   const current = loadConfig();
   const merged = { ...current, ...cfg };
-  saveEnvFile(ENV_FILE, {
-    GEMINI_API_KEY: merged.GEMINI_API_KEY || '',
-    DOWNLOAD_DIR: merged.DOWNLOAD_DIR || 'D:\\HDRG'
-  });
+  if (!ISOLATED_CONFIG_ONLY) {
+    saveEnvFile(ENV_FILE, {
+      GEMINI_API_KEY: merged.GEMINI_API_KEY || '',
+      DOWNLOAD_DIR: merged.DOWNLOAD_DIR || DEFAULT_DOWNLOAD_DIR,
+    });
+  }
+  fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(merged, null, 2), 'utf8');
-  try {
-    const ezargDir = 'D:\\EZARG';
-    if (fs.existsSync(ezargDir)) {
-      fs.writeFileSync(path.join(ezargDir, 'config.json'), JSON.stringify(merged, null, 2), 'utf8');
-    }
-  } catch (_) {}
+  if (!ISOLATED_CONFIG_ONLY) {
+    try {
+      const ezargDir = 'D:\\EZARG';
+      if (fs.existsSync(ezargDir)) {
+        fs.writeFileSync(path.join(ezargDir, 'config.json'), JSON.stringify(merged, null, 2), 'utf8');
+      }
+    } catch (_) {}
+  }
 }
 
-function promptFolderPicker(initialPath = 'D:\\HDRG') {
-  return new Promise((resolve) => {
+async function promptFolderPicker(initialPath = DEFAULT_DOWNLOAD_DIR) {
+  if (customFolderPickerHandler) {
+    return await customFolderPickerHandler(initialPath || DEFAULT_DOWNLOAD_DIR);
+  }
+  return await new Promise((resolve) => {
+    const safePath = String(initialPath || DEFAULT_DOWNLOAD_DIR).replace(/'/g, "''");
     const psScript = `
       Add-Type -AssemblyName System.Windows.Forms
+      Add-Type -AssemblyName System.Drawing
       $f = New-Object System.Windows.Forms.FolderBrowserDialog
-      $f.Description = "ជ្រើសរើស Folder សម្រាប់រក្សាទុកវីដេអូ HDRG"
-      $f.SelectedPath = "${initialPath.replace(/\\/g, '\\\\')}"
+      $f.Description = 'EZA PRO Downloader: Select Download Folder'
+      if (Test-Path -LiteralPath '${safePath}') {
+        $f.SelectedPath = '${safePath}'
+      }
       $f.ShowNewFolderButton = $true
       $top = New-Object System.Windows.Forms.Form
       $top.TopMost = $true
-      $top.StartPosition = "Manual"
-      $top.Location = New-Object System.Drawing.Point(-2000, -2000)
+      $top.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+      $top.Size = New-Object System.Drawing.Size(1, 1)
       $top.Show()
+      $top.Activate()
       $res = $f.ShowDialog($top)
       $top.Close()
+      $top.Dispose()
       if ($res -eq [System.Windows.Forms.DialogResult]::OK) {
         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
         Write-Output $f.SelectedPath
       }
     `;
     const b64 = Buffer.from(psScript, 'utf16le').toString('base64');
-    const child = spawn('powershell.exe', ['-NoProfile', '-EncodedCommand', b64]);
+    const child = spawn('powershell.exe', ['-NoProfile', '-STA', '-EncodedCommand', b64]);
     let stdout = '';
+    const timeout = setTimeout(() => {
+      try { child.kill(); } catch (_) {}
+      resolve(null);
+    }, 90000);
     child.stdout.on('data', d => stdout += d.toString('utf8'));
-    child.on('close', () => {
-      resolve(stdout.trim() || null);
-    });
-    child.on('error', () => resolve(null));
+    child.on('close', () => { clearTimeout(timeout); resolve(stdout.trim() || null); });
+    child.on('error', () => { clearTimeout(timeout); resolve(null); });
   });
 }
 
-// Multi-Category Drama Engine & 10-Minute Auto-Refresh
+// ===== Drama Catalog & Khmer Quick Dictionary =====
 const CATEGORIES = [
   { id: 'trending', name: '🔥 កំពុងល្បី', badge: 'HOT 100', icon: '🔥' },
   { id: 'sad', name: '😭 កម្សត់ & ទុក្ខសោក', badge: 'MELODRAMA', icon: '😭' },
@@ -155,7 +186,7 @@ const CATEGORIES = [
   { id: 'costume', name: '⏳ ឆ្លងភព & បុរាណ', badge: 'HISTORICAL', icon: '⏳' },
   { id: 'comedy', name: '🎭 កំប្លែង & សប្បាយ', badge: 'COMEDY', icon: '🎭' },
   { id: 'family', name: '👨‍👩‍👧 គ្រួសារ & ជីវិត', badge: 'FAMILY', icon: '👨‍👩‍👧' },
-  { id: 'suspense', name: '🔍 អាថ៌កំបាំង', badge: 'MYSTERY', icon: '🔍' }
+  { id: 'suspense', name: '🔍 អាថ៌កំបាំង', badge: 'MYSTERY', icon: '🔍' },
 ];
 
 const KHMER_DICT = [
@@ -208,16 +239,14 @@ const KHMER_DICT = [
   ['萌宝', 'កូនឆ្លាតគួរឱ្យស្រឡាញ់'],
   ['首富', 'មហាសេដ្ឋីលេខ១'],
   ['无敌', 'ឥតផ្ទឹម'],
-  ['开局', 'ចាប់ផ្ដើមរឿង']
+  ['开局', 'ចាប់ផ្ដើមរឿង'],
 ];
 
 function getKhmerTitle(title) {
   if (!title) return '';
   let kh = title;
   for (const [cn, km] of KHMER_DICT) {
-    if (kh.includes(cn)) {
-      kh = kh.split(cn).join(km + ' ');
-    }
+    if (kh.includes(cn)) kh = kh.split(cn).join(km + ' ');
   }
   return kh === title ? '' : kh.trim();
 }
@@ -227,8 +256,6 @@ let nextRefreshTimestamp = Date.now() + 10 * 60 * 1000;
 const categoryCache = new Map();
 
 async function refreshTrendingDramas() {
-  const axios = require('./hongguo-drama/node_modules/axios');
-  const catalog = require('./hongguo-drama/src/native/catalog');
   const categories = ['hot-drama', 'hot-real-drama', 'hot-comic-drama'];
   const allDramas = [];
   const seen = new Set();
@@ -240,9 +267,9 @@ async function refreshTrendingDramas() {
       try {
         const res = await axios.get(url, {
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0' },
-          timeout: 6000
+          timeout: 6000,
         });
-        const router = catalog.readRouterData(res.data);
+        const router = readRouterData(res.data);
         const content = router.loaderData?.['rank_' + cat + '/page']?.content;
         const parsed = typeof content === 'string' ? JSON.parse(content) : content;
         if (parsed?.rankList) {
@@ -258,7 +285,7 @@ async function refreshTrendingDramas() {
                 heat: item.heatText || '',
                 total: totalEps,
                 rank: allDramas.length + 1,
-                tags: Array.isArray(item.tags) ? item.tags.slice(0, 3) : ['热门', '短剧']
+                tags: Array.isArray(item.tags) ? item.tags.slice(0, 3) : ['热门', '短剧'],
               });
               if (allDramas.length >= 100) break;
             }
@@ -271,7 +298,7 @@ async function refreshTrendingDramas() {
   if (allDramas.length > 0) {
     cachedTrendingDramas = allDramas;
     nextRefreshTimestamp = Date.now() + 10 * 60 * 1000;
-    console.log(`[Trending] ទទួលបានរឿងភាគល្បីៗចំនួន ${cachedTrendingDramas.length} រឿងស្រស់ៗ!`);
+    console.log(`[Trending] ទទួលបានរឿងភាគល្បីៗចំនួន ${cachedTrendingDramas.length} រឿង!`);
   }
 }
 
@@ -284,10 +311,7 @@ async function fetchCategoryDramas(category, page = 1, force = false) {
       if (force || cachedTrendingDramas.length === 0) await refreshTrendingDramas();
       return cachedTrendingDramas;
     }
-    if (!force && categoryCache.has(cacheKey)) {
-      return categoryCache.get(cacheKey).dramas;
-    }
-    const { browseList } = require('./hongguo-drama/src/native/catalog');
+    if (!force && categoryCache.has(cacheKey)) return categoryCache.get(cacheKey).dramas;
     const extraList = [];
     const seen = new Set();
     const genres = ['urban', 'romance', 'comeback', 'costume'];
@@ -307,7 +331,7 @@ async function fetchCategoryDramas(category, page = 1, force = false) {
             total: Number(item.episode_count) || 80,
             tags: Array.isArray(item.tags) ? item.tags.slice(0, 3) : ['កំពុងល្បី', 'ពេញនិយម'],
             category: 'trending',
-            rank: 100 + (pg - 2) * 24 + extraList.length
+            rank: 100 + (pg - 2) * 24 + extraList.length,
           });
         }
       });
@@ -323,29 +347,23 @@ async function fetchCategoryDramas(category, page = 1, force = false) {
     }
   }
 
-  const { searchHongguo } = require('./hongguo-drama/src/native/hongguo-search');
-  const { browseList } = require('./hongguo-drama/src/native/catalog');
-
   const list = [];
   const seen = new Set();
-
   function addItem(item, defaultTag) {
     if (!item) return;
     const id = String(item.series_id || item.seriesId || '').trim();
     const title = String(item.series_title || item.title || '').trim();
     if (!id || !title || seen.has(id)) return;
     seen.add(id);
-    const tags = Array.isArray(item.tags) && item.tags.length ? item.tags.slice(0, 3) : [defaultTag];
-    const total = Number(item.episode_count || item.episodeCount) || 80;
     list.push({
       id,
       title,
       titleKhmer: getKhmerTitle(title),
       cover: item.cover || item.series_cover || '',
       heat: item.heat || item.heatText || '',
-      total,
-      tags,
-      category
+      total: Number(item.episode_count || item.episodeCount) || 80,
+      tags: Array.isArray(item.tags) && item.tags.length ? item.tags.slice(0, 3) : [defaultTag],
+      category,
     });
   }
 
@@ -354,7 +372,7 @@ async function fetchCategoryDramas(category, page = 1, force = false) {
       const [r1, r2, r3] = await Promise.all([
         searchHongguo('虐恋', { page: pg }).catch(() => ({ results: [] })),
         searchHongguo('苦情', { page: pg }).catch(() => ({ results: [] })),
-        searchHongguo('追妻', { page: pg }).catch(() => ({ results: [] }))
+        searchHongguo('追妻', { page: pg }).catch(() => ({ results: [] })),
       ]);
       r1.results?.forEach(i => addItem(i, '虐恋'));
       r2.results?.forEach(i => addItem(i, '苦情'));
@@ -363,7 +381,7 @@ async function fetchCategoryDramas(category, page = 1, force = false) {
       const [r1, r2, r3] = await Promise.all([
         searchHongguo('甜宠', { page: pg }).catch(() => ({ results: [] })),
         searchHongguo('先婚后爱', { page: pg }).catch(() => ({ results: [] })),
-        searchHongguo('暗恋成真', { page: pg }).catch(() => ({ results: [] }))
+        searchHongguo('暗恋成真', { page: pg }).catch(() => ({ results: [] })),
       ]);
       r1.results?.forEach(i => addItem(i, '甜宠'));
       r2.results?.forEach(i => addItem(i, '先婚后爱'));
@@ -371,7 +389,7 @@ async function fetchCategoryDramas(category, page = 1, force = false) {
     } else if (category === 'romance') {
       const [r1, r2] = await Promise.all([
         browseList({ category: 'real-drama', genre: 'romance', page: pg }).catch(() => ({ results: [] })),
-        searchHongguo('爱情', { page: pg }).catch(() => ({ results: [] }))
+        searchHongguo('爱情', { page: pg }).catch(() => ({ results: [] })),
       ]);
       r1.results?.forEach(i => addItem(i, '爱情'));
       r2.results?.forEach(i => addItem(i, '都市爱情'));
@@ -379,7 +397,7 @@ async function fetchCategoryDramas(category, page = 1, force = false) {
       const [r1, r2, r3] = await Promise.all([
         searchHongguo('总裁', { page: pg }).catch(() => ({ results: [] })),
         searchHongguo('豪门', { page: pg }).catch(() => ({ results: [] })),
-        searchHongguo('闪婚', { page: pg }).catch(() => ({ results: [] }))
+        searchHongguo('闪婚', { page: pg }).catch(() => ({ results: [] })),
       ]);
       r1.results?.forEach(i => addItem(i, '总裁'));
       r2.results?.forEach(i => addItem(i, '豪门'));
@@ -387,7 +405,7 @@ async function fetchCategoryDramas(category, page = 1, force = false) {
     } else if (category === 'comeback') {
       const [r1, r2] = await Promise.all([
         browseList({ category: 'real-drama', genre: 'comeback', page: pg }).catch(() => ({ results: [] })),
-        searchHongguo('逆袭', { page: pg }).catch(() => ({ results: [] }))
+        searchHongguo('逆袭', { page: pg }).catch(() => ({ results: [] })),
       ]);
       r1.results?.forEach(i => addItem(i, '逆袭'));
       r2.results?.forEach(i => addItem(i, '战神'));
@@ -395,7 +413,7 @@ async function fetchCategoryDramas(category, page = 1, force = false) {
       const [r1, r2, r3] = await Promise.all([
         browseList({ category: 'real-drama', genre: 'costume', page: pg }).catch(() => ({ results: [] })),
         searchHongguo('古装', { page: pg }).catch(() => ({ results: [] })),
-        searchHongguo('穿越', { page: pg }).catch(() => ({ results: [] }))
+        searchHongguo('穿越', { page: pg }).catch(() => ({ results: [] })),
       ]);
       r1.results?.forEach(i => addItem(i, '古装'));
       r2.results?.forEach(i => addItem(i, '穿越'));
@@ -403,21 +421,21 @@ async function fetchCategoryDramas(category, page = 1, force = false) {
     } else if (category === 'comedy') {
       const [r1, r2] = await Promise.all([
         browseList({ category: 'real-drama', genre: 'comedy', page: pg }).catch(() => ({ results: [] })),
-        searchHongguo('喜剧', { page: pg }).catch(() => ({ results: [] }))
+        searchHongguo('喜剧', { page: pg }).catch(() => ({ results: [] })),
       ]);
       r1.results?.forEach(i => addItem(i, '喜剧'));
       r2.results?.forEach(i => addItem(i, '搞笑'));
     } else if (category === 'family') {
       const [r1, r2] = await Promise.all([
         browseList({ category: 'real-drama', genre: 'family', page: pg }).catch(() => ({ results: [] })),
-        searchHongguo('家庭', { page: pg }).catch(() => ({ results: [] }))
+        searchHongguo('家庭', { page: pg }).catch(() => ({ results: [] })),
       ]);
       r1.results?.forEach(i => addItem(i, '家庭'));
       r2.results?.forEach(i => addItem(i, '婚姻'));
     } else if (category === 'suspense') {
       const [r1, r2] = await Promise.all([
         browseList({ category: 'real-drama', genre: 'suspense', page: pg }).catch(() => ({ results: [] })),
-        searchHongguo('悬疑', { page: pg }).catch(() => ({ results: [] }))
+        searchHongguo('悬疑', { page: pg }).catch(() => ({ results: [] })),
       ]);
       r1.results?.forEach(i => addItem(i, '悬疑'));
       r2.results?.forEach(i => addItem(i, '惊悚'));
@@ -427,1815 +445,966 @@ async function fetchCategoryDramas(category, page = 1, force = false) {
   }
 
   categoryCache.set(cacheKey, { timestamp: Date.now(), dramas: list });
-  console.log(`[Category ${category} (Page ${pg})] ទទួលបានរឿងចំនួន ${list.length} រឿង`);
   return list;
 }
 
-// Initial fetch & pre-warm top categories
-refreshTrendingDramas().then(() => {
-  // Pre-warm in background without blocking
-  setTimeout(() => fetchCategoryDramas('sad'), 500);
-  setTimeout(() => fetchCategoryDramas('sweet'), 1500);
-  setTimeout(() => fetchCategoryDramas('ceo'), 2500);
-  setTimeout(() => fetchCategoryDramas('romance'), 3500);
-  setTimeout(() => fetchCategoryDramas('comeback'), 4500);
-});
+let catalogWarmupStarted = false;
+let catalogWarmupTimers = [];
+let trendingRefreshTimer = null;
 
-setInterval(() => {
-  refreshTrendingDramas();
-  categoryCache.clear();
-}, 10 * 60 * 1000);
-
-// Robust episode list fetcher with caching and curl fallback
-async function fetchEpisodeListSafe(seriesId) {
-  const sid = String(seriesId).trim();
-  if (dramaCache.has(sid)) return dramaCache.get(sid);
-
-  const localHtml = path.join(__dirname, 'detail_page.html');
-  let html = '';
-
-  try {
-    const tempFile = path.join(__dirname, `temp_detail_${sid}.html`);
-    await runCurlAsync(['-s', '-L', '-m', '15', `https://hongguoduanju.com/detail?series_id=${sid}`, '-o', tempFile]);
-    if (fs.existsSync(tempFile) && fs.statSync(tempFile).size > 10000) {
-      html = fs.readFileSync(tempFile, 'utf8');
-      try { fs.unlinkSync(tempFile); } catch (_) {}
+function startCatalogWarmup() {
+  if (catalogWarmupStarted) return;
+  catalogWarmupStarted = true;
+  refreshTrendingDramas().then(() => {
+    const delays = [
+      ['sad', 500],
+      ['sweet', 1500],
+      ['ceo', 2500],
+      ['romance', 3500],
+      ['comeback', 4500]
+    ];
+    for (const [cat, ms] of delays) {
+      const t = setTimeout(() => fetchCategoryDramas(cat), ms);
+      if (t.unref) t.unref();
+      catalogWarmupTimers.push(t);
     }
-  } catch (_) {}
+  }).catch(() => {});
 
-  if (!html && fs.existsSync(localHtml) && sid === '7701328280862854168') {
-    html = fs.readFileSync(localHtml, 'utf8');
-  }
-
-  if (html) {
-    try {
-      const router = readRouterData(html);
-      const data = router.loaderData?.['player_(series_id)/page'] ?? router.loaderData?.['player_(series_id)/(vid)/page'] ?? router.loaderData?.detail_page;
-      const detail = data?.seriesDetail;
-      if (detail && Array.isArray(detail.vid_list)) {
-        const result = {
-          series_id: String(detail.series_id || sid),
-          series_title: detail.series_name || 'Drama_' + sid,
-          cover: detail.series_cover || '',
-          episodes: detail.vid_list.map((vid, idx) => ({
-            vid: String(vid),
-            vid_index: idx + 1,
-            title: `第${idx + 1}集`
-          }))
-        };
-        dramaCache.set(sid, result);
-        return result;
-      }
-    } catch (_) {}
-  }
-
-  const { fetchEpisodeList } = require('./hongguo-drama/src/native/hongguo');
-  const res = await fetchEpisodeList(sid);
-  dramaCache.set(sid, res);
-  return res;
+  trendingRefreshTimer = setInterval(() => {
+    refreshTrendingDramas();
+    categoryCache.clear();
+  }, 10 * 60 * 1000);
+  if (trendingRefreshTimer.unref) trendingRefreshTimer.unref();
 }
 
-function broadcastProgress(data) {
-  const message = `data: ${JSON.stringify(data)}\n\n`;
-  progressClients.forEach(client => {
-    try { client.res.write(message); } catch (_) {}
-  });
+function stopCatalogWarmup() {
+  for (const t of catalogWarmupTimers) {
+    try { clearTimeout(t); } catch (_) {}
+  }
+  catalogWarmupTimers = [];
+  if (trendingRefreshTimer) {
+    try { clearInterval(trendingRefreshTimer); } catch (_) {}
+    trendingRefreshTimer = null;
+  }
+  catalogWarmupStarted = false;
+}
+
+// ===== Drama Metadata Lookup & Episode List Resolver =====
+function buildKnownMetaByFolder() {
+  const map = new Map();
+  const addEntry = (id, title, titleKhmer, cover, total) => {
+    if (!title) return;
+    const folder = dl.sanitizeTitle(title, id);
+    if (!folder) return;
+    const prev = map.get(folder) || {};
+    map.set(folder, {
+      seriesId: String(id || prev.seriesId || ''),
+      title: String(title || prev.title || ''),
+      titleKhmer: String(titleKhmer || prev.titleKhmer || getKhmerTitle(title) || ''),
+      cover: String(cover || prev.cover || ''),
+      total: Number(total || prev.total || 0),
+    });
+  };
+  for (const d of cachedTrendingDramas) {
+    addEntry(d.id, d.title, d.titleKhmer, d.cover, d.total);
+  }
+  for (const entry of categoryCache.values()) {
+    for (const d of (entry.dramas || [])) addEntry(d.id, d.title, d.titleKhmer, d.cover, d.total);
+  }
+  for (const [sid, cached] of dramaCache.entries()) {
+    const info = cached?.data;
+    if (info) addEntry(info.series_id || sid, info.series_title, getKhmerTitle(info.series_title), info.cover, info.episodes?.length);
+  }
+  return map;
+}
+
+function findDramaMetaBySeriesId(seriesId) {
+  const sid = String(seriesId || '').trim();
+  if (!sid) return {};
+  const cached = dramaCache.get(sid)?.data;
+  if (cached) {
+    return {
+      title: cached.series_title || '',
+      titleKhmer: getKhmerTitle(cached.series_title),
+      cover: cached.cover || '',
+      total: cached.episodes?.length || 0,
+    };
+  }
+  for (const d of cachedTrendingDramas) {
+    if (String(d.id) === sid) return d;
+  }
+  for (const entry of categoryCache.values()) {
+    const found = (entry.dramas || []).find((d) => String(d.id) === sid);
+    if (found) return found;
+  }
+  return {};
+}
+
+async function fetchEpisodeListSafe(seriesId, force = false) {
+  const sid = String(seriesId || '').trim();
+  if (!sid) throw new Error('Series ID មិនត្រឹមត្រូវ');
+  const cached = dramaCache.get(sid);
+  if (!force && cached && Date.now() - cached.timestamp < DRAMA_CACHE_TTL_MS) {
+    return cached.data;
+  }
+  const source = sources.detectSourceFromId(sid);
+  const fetcher = () => (source === 'hongguo'
+    ? fetchEpisodeList(sid, { force })
+    : sources.fetchEpisodeListUnified(sid, { force }));
+  let res = null;
+  try {
+    res = await fetcher();
+  } catch (err) {
+    await dl.sleep(600);
+    res = await fetcher();
+  }
+  if (res && !res.source) res.source = source;
+  dramaCache.set(sid, { timestamp: Date.now(), data: res });
+  if (res?.series_title) {
+    const cleanTitle = dl.sanitizeTitle(res.series_title, sid);
+    const outputDir = path.join(getDownloadDir(), cleanTitle);
+    if (fs.existsSync(outputDir)) {
+      dl.saveDramaMeta(outputDir, {
+        seriesId: String(res.series_id || sid),
+        title: res.series_title,
+        titleKhmer: getKhmerTitle(res.series_title),
+        cover: res.cover || '',
+        source: res.source || source,
+        total: Array.isArray(res.episodes) ? res.episodes.length : 0,
+      });
+    }
+  }
+  return res;
 }
 
 function extractSeriesId(input) {
   if (!input) return null;
   const str = String(input).trim();
-  const queryMatch = str.match(/series_id=(\d+)/);
+  const multiId = sources.resolveDramaUrlOrId(str);
+  if (multiId) return multiId;
+  const queryMatch = str.match(/(?:video_)?series_id=(\d+)/);
   if (queryMatch) return queryMatch[1];
-  const pathMatch = str.match(/\/(\d{15,30})\b/);
+  const pathMatch = str.match(/\/(?:player|detail)\/(\d{10,30})\b/);
   if (pathMatch) return pathMatch[1];
-  const digitsMatch = str.match(/\b\d{15,30}\b/);
+  const digitsMatch = str.match(/^\d{10,30}$/);
   if (digitsMatch) return digitsMatch[0];
   return null;
 }
 
-async function smartResolve(input) {
-  let seriesId = extractSeriesId(input);
+async function smartResolve(input, preferredSource = 'hongguo', cookiesFromBrowser = '') {
+  const str = String(input || '').trim();
+  if (ytdlp.isSocialVideoUrl(str)) {
+    const socialInfo = await ytdlp.probeUrl(str, { cookiesFromBrowser });
+    return { isSocial: true, socialInfo };
+  }
+
+  const seriesId = extractSeriesId(str);
   if (seriesId) {
     const info = await fetchEpisodeListSafe(seriesId);
     return {
-      seriesId,
+      seriesId: String(info.series_id || seriesId),
+      source: info.source || sources.detectSourceFromId(seriesId),
       title: info.series_title,
+      titleKhmer: getKhmerTitle(info.series_title),
       cover: info.cover,
       total: info.episodes.length,
-      episodes: info.episodes
+      episodes: info.episodes,
+      matches: [],
     };
   }
 
-  const searchRes = await searchHongguo(input);
-  if (searchRes && searchRes.results && searchRes.results.length > 0) {
+  if (preferredSource && !['hongguo', 'social'].includes(preferredSource)) {
+    const srcMatches = await sources.searchSource(preferredSource, str, 1, getKhmerTitle);
+    if (srcMatches.length > 0) {
+      const top = srcMatches[0];
+      if (srcMatches.length === 1) {
+        const info = await fetchEpisodeListSafe(top.id);
+        return {
+          seriesId: String(info.series_id || top.id),
+          source: preferredSource,
+          title: info.series_title || top.title,
+          titleKhmer: getKhmerTitle(info.series_title || top.title),
+          cover: info.cover || top.cover,
+          total: info.episodes.length || top.total,
+          episodes: info.episodes,
+          matches: [],
+        };
+      }
+      return {
+        seriesId: String(top.id),
+        source: preferredSource,
+        title: top.title,
+        titleKhmer: top.titleKhmer,
+        cover: top.cover,
+        total: top.total,
+        matches: srcMatches.slice(0, 18),
+      };
+    }
+    throw new Error(`រកមិនឃើញរឿង "${str}" នៅលើ ${preferredSource} ទេ — សូមសាកល្បងពាក្យផ្សេង ឬបិទភ្ជាប់ Link!`);
+  }
+
+  const searchRes = await searchHongguo(str);
+  if (searchRes && Array.isArray(searchRes.results) && searchRes.results.length > 0) {
+    const matches = searchRes.results.slice(0, 12).map((item, idx) => ({
+      id: String(item.series_id),
+      title: item.series_title,
+      titleKhmer: getKhmerTitle(item.series_title),
+      cover: item.cover || '',
+      heat: item.episode_count ? `${item.episode_count} ភាគ` : 'Hongguo',
+      total: Number(item.episode_count) || 80,
+      tags: item.tags || ['ស្វែងរក'],
+      source: 'hongguo',
+      rank: idx + 1,
+    }));
     const top = searchRes.results[0];
     const info = await fetchEpisodeListSafe(top.series_id);
     return {
-      seriesId: top.series_id,
+      seriesId: String(top.series_id),
+      source: 'hongguo',
       title: info.series_title || top.series_title,
+      titleKhmer: getKhmerTitle(info.series_title || top.series_title),
       cover: info.cover || top.cover,
       total: info.episodes.length || top.episode_count,
-      episodes: info.episodes
+      episodes: info.episodes,
+      matches,
     };
   }
 
-  throw new Error('រកមិនឃើញរឿងតាមរយៈឈ្មោះ ឬ Link នេះទេ');
+  throw new Error(`រកមិនឃើញរឿងសម្រាប់ "${str}" ទេ — សូមសាកល្បងឈ្មោះចិន ឬបិទភ្ជាប់ Link / Series ID!`);
 }
 
+// ===== Real-Time Broadcast & Multi-Job Snapshot State =====
+function broadcastSSE(data) {
+  const message = `data: ${JSON.stringify(data)}\n\n`;
+  for (const client of progressClients) {
+    try { client.res.write(message); } catch (_) {}
+  }
+}
+
+function getJobSnapshot(job) {
+  if (!job) return { active: false, status: 'idle' };
+  const activeDownloading = Object.values(job.episodeStates).filter(s => ['resolving', 'downloading'].includes(s.status)).length;
+  const activeTranscoding = Object.values(job.episodeStates).filter(s => ['queued_transcode', 'transcoding', 'decrypting'].includes(s.status)).length;
+  return {
+    active: ACTIVE_JOB_STATUSES.has(job.status),
+    mode: job.mode || 'download',
+    jobId: job.id,
+    status: job.status,
+    seriesId: job.seriesId,
+    title: job.title,
+    titleKhmer: job.titleKhmer || '',
+    cover: job.cover || '',
+    folder: job.folder || (job.outputDir ? path.basename(job.outputDir) : ''),
+    outputDir: job.outputDir,
+    total: job.total,
+    completed: job.completed,
+    failed: job.failed,
+    activeDownloading,
+    activeTranscoding,
+    workers: job.workers,
+    qualityMode: job.qualityMode,
+    downloadedMb: (job.downloadedBytes / (1024 * 1024)).toFixed(1),
+    speedMb: Number(job.speedMb || 0),
+    speedText: job.speedText || '0.0 MB/s',
+    etaSec: job.etaSec,
+    elapsedSec: Math.round(((job.finishedAt || Date.now()) - job.startedAt) / 1000),
+    createdAt: job.startedAt,
+    finishedAt: job.finishedAt || null,
+    progress: job.progress,
+    message: job.message,
+    logs: job.logs.slice(-20),
+    episodes: job.episodeStates,
+    failedList: job.failedList || [],
+  };
+}
+
+function getAllJobSnapshots() {
+  const all = [...jobsMap.values()];
+  all.sort((a, b) => {
+    const aAct = ACTIVE_JOB_STATUSES.has(a.status) ? 1 : 0;
+    const bAct = ACTIVE_JOB_STATUSES.has(b.status) ? 1 : 0;
+    if (aAct !== bAct) return bAct - aAct;
+    return (b.finishedAt || b.startedAt) - (a.finishedAt || a.startedAt);
+  });
+  return all.map((j) => getJobSnapshot(j));
+}
+
+function getJobsSummary() {
+  let activeCount = 0;
+  let totalCompleted = 0;
+  let totalQueued = 0;
+  let combinedSpeedMb = 0;
+  for (const j of jobsMap.values()) {
+    if (ACTIVE_JOB_STATUSES.has(j.status)) {
+      activeCount++;
+      totalCompleted += j.completed || 0;
+      totalQueued += j.total || 0;
+      combinedSpeedMb += Number(j.speedMb || 0);
+    }
+  }
+  return {
+    activeCount,
+    totalJobs: jobsMap.size,
+    totalCompleted,
+    totalQueued,
+    totalSpeedText: `${combinedSpeedMb.toFixed(1)} MB/s`,
+  };
+}
+
+function getPrimaryJobSnapshot() {
+  const all = getAllJobSnapshots();
+  return all.length ? all[0] : { active: false, status: 'idle' };
+}
+
+function trimFinishedJobs() {
+  if (jobsMap.size <= MAX_JOB_HISTORY) return;
+  const finished = [...jobsMap.values()]
+    .filter((j) => !ACTIVE_JOB_STATUSES.has(j.status))
+    .sort((a, b) => (a.finishedAt || a.startedAt) - (b.finishedAt || b.startedAt));
+  while (jobsMap.size > MAX_JOB_HISTORY && finished.length > 0) {
+    const oldest = finished.shift();
+    jobsMap.delete(oldest.id);
+  }
+}
+
+function findActiveJob(seriesId, folder = '') {
+  const sid = String(seriesId || '').trim();
+  const fld = String(folder || '').trim();
+  for (const job of jobsMap.values()) {
+    if (!ACTIVE_JOB_STATUSES.has(job.status)) continue;
+    if (sid && String(job.seriesId) === sid) return job;
+    const jobFolder = job.folder || (job.outputDir ? path.basename(job.outputDir) : '');
+    if (fld && jobFolder && jobFolder === fld) return job;
+  }
+  return null;
+}
+
+function pushJobLog(job, text) {
+  const d = new Date();
+  const ts = [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
+  const entry = `[${ts}] ${text}`;
+  job.logs.push(entry);
+  if (job.logs.length > 40) job.logs.shift();
+  console.log(`[Job ${job.seriesId || job.folder}] ${entry}`);
+}
+
+function emitSnapshot(job, force = false) {
+  const now = Date.now();
+  if (!force && job && job.lastBroadcastAt && now - job.lastBroadcastAt < 250) return;
+  if (job) job.lastBroadcastAt = now;
+  broadcastSSE({
+    type: 'snapshot',
+    snapshot: job ? getJobSnapshot(job) : getPrimaryJobSnapshot(),
+    jobs: getAllJobSnapshots(),
+    summary: getJobsSummary(),
+  });
+}
+
+function cancelJob(job, reasonMsg = '🛑 បានបញ្ឈប់ការទាញយក!') {
+  if (!job) return;
+  job.cancelled = true;
+  job.status = 'cancelled';
+  job.message = reasonMsg;
+  job.speedMb = 0;
+  job.speedText = '0.0 MB/s';
+  job.finishedAt = Date.now();
+  try { job.abortController.abort(new Error('CANCELLED')); } catch (_) {}
+  for (const child of job.activeChildren) {
+    ytdlp.killProcessTree(child);
+  }
+  job.activeChildren.clear();
+  for (const epKey of Object.keys(job.episodeStates)) {
+    const st = job.episodeStates[epKey].status;
+    if (!['done', 'error'].includes(st)) {
+      job.episodeStates[epKey] = { status: 'pending', percent: 0, text: 'បានផ្អាក' };
+    }
+  }
+  pushJobLog(job, reasonMsg);
+  emitSnapshot(job, true);
+}
+
+function cancelAllActiveJobs(reasonMsg = '🛑 បានបញ្ឈប់ការទាញយកទាំងអស់!') {
+  for (const job of jobsMap.values()) {
+    if (ACTIVE_JOB_STATUSES.has(job.status)) {
+      cancelJob(job, reasonMsg);
+    }
+  }
+}
+
+// ===== Turbo Batch Download Engine with Auto-Retry & ByteVC2 Support =====
 async function runBatchDownload(job) {
-  const { seriesId, selectedEps, autoMerge, workers = 8 } = job;
+  const { seriesId, selectedEps, autoMerge, workers = 8, qualityMode = '1080p' } = job;
+  const signal = job.abortController.signal;
+
+  // Rolling 2.5s byte window for accurate live MB/s measurement
+  const byteWindow = [];
+  function recordBytes(delta) {
+    if (!delta || delta <= 0) return;
+    job.downloadedBytes += delta;
+    const now = Date.now();
+    byteWindow.push({ t: now, b: delta });
+    while (byteWindow.length && now - byteWindow[0].t > 2500) {
+      byteWindow.shift();
+    }
+    const windowBytes = byteWindow.reduce((sum, x) => sum + x.b, 0);
+    const spanSec = byteWindow.length > 1 ? Math.max(0.5, (now - byteWindow[0].t) / 1000) : 1;
+    const mbPerSec = (windowBytes / (1024 * 1024)) / spanSec;
+    job.speedMb = mbPerSec;
+    job.speedText = `${mbPerSec.toFixed(1)} MB/s`;
+  }
+
   try {
-    broadcastProgress({ type: 'global', status: 'info', message: 'កំពុងទាញយកព័ត៌មានភាគរឿង...', progress: 5 });
+    job.status = 'running';
+    job.message = '📡 កំពុងទាញយកបញ្ជីភាគ និងត្រួតពិនិត្យ Folder...';
+    const sourceTag = sources.detectSourceFromId(seriesId);
+    pushJobLog(job, `📡 កំពុងទាញយកព័ត៌មានបញ្ជីភាគពី ${sourceTag.toUpperCase()}...`);
+    emitSnapshot(job, true);
+
     const info = await fetchEpisodeListSafe(seriesId);
-    const cleanTitle = (info.series_title || 'Drama_' + seriesId).replace(/[\\/:*?"<>|]/g, '_');
+    if (job.cancelled || signal.aborted) return;
+
+    const cleanTitle = dl.sanitizeTitle(info.series_title, seriesId);
+    job.title = info.series_title;
+    job.titleKhmer = job.titleKhmer || getKhmerTitle(info.series_title);
+    job.cover = job.cover || info.cover || '';
+    job.folder = cleanTitle;
     const outputDir = path.join(getDownloadDir(), cleanTitle);
+    job.outputDir = outputDir;
     if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
-
-    const totalEps = info.episodes.length;
-    const ffmpegExe = path.join(__dirname, 'hongguo-drama', 'build', 'ffmpeg', 'ffmpeg.exe');
-
-    const queue = selectedEps.map(num => {
-      const epIndex = num - 1;
-      return {
-        epNum: num,
-        epData: info.episodes[epIndex] || { vid_index: num }
-      };
-    });
-
-    const activeConcurrency = Math.min(Math.max(1, Number(workers) || 8), queue.length);
-
-    broadcastProgress({
-      type: 'global',
-      status: 'started',
+    const totalDramaEps = info.episodes.length;
+    dl.saveDramaMeta(outputDir, {
+      seriesId,
       title: info.series_title,
-      total: queue.length,
-      workers: activeConcurrency,
-      progress: 8,
-      message: `🚀 ចាប់ផ្ដើមទាញយកចំនួន ${queue.length} ភាគ (Threads: ${activeConcurrency} Turbo)...`
+      titleKhmer: job.titleKhmer,
+      cover: job.cover,
+      source: info.source || sourceTag,
+      total: totalDramaEps,
     });
 
-    const downloadedFiles = [];
-    let completedCount = 0;
-    let totalBytesDownloaded = 0;
-    let queueIndex = 0;
-    const downloadStartTime = Date.now();
+    // Clean orphaned temp files and 0-byte corrupted MP4s before starting
+    const cleaned = dl.removeBrokenMp4Files(outputDir);
+    if (cleaned > 0) {
+      pushJobLog(job, `🧹 បានសម្អាតឯកសារខូច/0MB ចាស់ៗចំនួន ${cleaned} ឯកសារដើម្បីទាញឡើងវិញ!`);
+    }
 
-    // High-speed URL Pre-fetch Pipeline (background prefetching so download workers never wait for API)
+    dl.organizeDramaFolder(outputDir, cleanTitle, totalDramaEps);
+    const lockedSet = new Set(info.episodes.filter((e) => e.locked).map((e) => Number(e.vid_index)));
+    const rawTargets = (!selectedEps || selectedEps === 'all')
+      ? info.episodes.filter((e) => !e.locked).map((e) => Number(e.vid_index))
+      : selectedEps;
+    const targetNums = [...new Set((rawTargets || []).map(Number).filter(n => Number.isInteger(n) && n >= 1 && n <= totalDramaEps))];
+    targetNums.sort((a, b) => a - b);
+
+    if ((!selectedEps || selectedEps === 'all') && lockedSet.size > 0 && targetNums.length > 0) {
+      pushJobLog(job, `🔒 រឿងនេះមាន ${lockedSet.size} ភាគជាប់សោ VIP — ទាញយកភាគឥតគិតថ្លៃ ${targetNums.length} ភាគ!`);
+    }
+
+    if (targetNums.length === 0) {
+      throw new Error(lockedSet.size > 0 ? 'គ្រប់ភាគទាំងអស់ជាប់សោ VIP លើវេទិកាដើម!' : 'គ្មានភាគត្រឹមត្រូវសម្រាប់ទាញយកទេ');
+    }
+
+    job.total = targetNums.length;
+    for (const num of targetNums) {
+      job.episodeStates[num] = { status: 'queued', percent: 0, text: 'រង់ចាំ...' };
+    }
+
+    const activeConcurrency = Math.min(Math.max(1, Number(workers) || 8), targetNums.length);
+    job.workers = activeConcurrency;
+    const bytevc2Sem = GLOBAL_BYTEVC2_SEM;
+
+    job.progress = 5;
+    job.message = `🚀 ចាប់ផ្ដើមទាញយក ${targetNums.length} ភាគ (${activeConcurrency} Threads • ${qualityMode === 'fast' ? '⚡ Fast Hybrid' : '💎 1080p HD'})`;
+    pushJobLog(job, job.message);
+    emitSnapshot(job, true);
+
+    const completedMap = new Map(); // epNum -> finalMp4
+    const failedMap = new Map(); // epNum -> errorMsg
     const playUrlMap = new Map();
-    let prefetchIndex = 0;
-    async function prefetchWorker() {
-      while (prefetchIndex < queue.length) {
-        if (job.cancelled) return;
-        const currentItem = queue[prefetchIndex++];
-        if (!currentItem) break;
-        const { epNum, epData } = currentItem;
-        if (playUrlMap.has(epNum)) continue;
-        try {
-          const play = await fetchPlayUrlSingle(epData.vid, seriesId);
-          if (play && play.url) playUrlMap.set(epNum, play);
-        } catch (_) {}
+    const inflightResolve = new Map();
+
+    // Helper: fetch play info once per episode (avoid duplicate parallel calls for same ep)
+    async function getPlayInfoCached(epNum, epData) {
+      if (playUrlMap.has(epNum)) return playUrlMap.get(epNum);
+      if (inflightResolve.has(epNum)) return inflightResolve.get(epNum);
+      const p = (async () => {
+        const res = await dl.resolvePlayInfoSmart(epData, seriesId, {
+          qualityMode,
+          signal,
+          onLog: (msg) => { pushJobLog(job, msg); emitSnapshot(job, false); },
+        });
+        playUrlMap.set(epNum, res);
+        return res;
+      })().finally(() => inflightResolve.delete(epNum));
+      inflightResolve.set(epNum, p);
+      return p;
+    }
+
+    // Rolling prefetcher (batch 12/call for HongGuo, 6 concurrent resolvers for DramaBox/ReelShort/Hema/Xifan)
+    const PREFETCH_BATCH_HONGGUO = 12;
+    const PREFETCH_BATCH_OTHER = 6;
+    let prefetchCursor = 0;
+    let activeQueueCursor = 0;
+
+    async function prefetchNextBatch(epList) {
+      const batchSize = sourceTag === 'hongguo' ? PREFETCH_BATCH_HONGGUO : PREFETCH_BATCH_OTHER;
+      const batchItems = [];
+      while (prefetchCursor < epList.length && batchItems.length < batchSize) {
+        const item = epList[prefetchCursor++];
+        if (!item || item.epData?.locked || playUrlMap.has(item.epNum) || completedMap.has(item.epNum)) continue;
+        const existing = dl.findExistingEpisodeFile(outputDir, cleanTitle, item.epNum, totalDramaEps);
+        if (existing && dl.isValidMp4File(existing)) continue;
+        batchItems.push(item);
       }
+      if (!batchItems.length) return false;
+      if (sourceTag === 'hongguo') {
+        const resolvedMap = await dl.resolveBatchPlayInfos(batchItems, { qualityMode, signal });
+        for (const [epNum, resolvedInfo] of resolvedMap.entries()) {
+          playUrlMap.set(epNum, resolvedInfo);
+        }
+      } else {
+        await Promise.allSettled(
+          batchItems.map((item) => getPlayInfoCached(item.epNum, item.epData).catch(() => null))
+        );
+      }
+      return true;
     }
-    // Launch background prefetchers
-    const prefetchWorkersCount = Math.min(3, queue.length);
-    for (let p = 0; p < prefetchWorkersCount; p++) {
-      prefetchWorker();
-    }
 
-    async function downloadWorker() {
-      while (queueIndex < queue.length) {
-        if (job.cancelled) return;
-        const currentItem = queue[queueIndex++];
-        if (!currentItem) break;
-
-        const { epNum, epData } = currentItem;
-        const padNum = String(epNum).padStart(String(totalEps).length, '0');
-        const finalMp4 = path.join(outputDir, `${cleanTitle}_第${padNum}集.mp4`);
-        const tempEncrypted = path.join(outputDir, `temp_ep_${epNum}_${Date.now()}.enc`);
-
-        if (fs.existsSync(finalMp4) && fs.statSync(finalMp4).size > 500000) {
-          downloadedFiles.push(finalMp4);
-          completedCount++;
-          const finalMb = (fs.statSync(finalMp4).size / (1024 * 1024)).toFixed(1);
-          broadcastProgress({
-            type: 'episode',
-            epNum,
-            status: 'done',
-            size: finalMb + ' MB'
-          });
+    const startPrefetchLoop = (epList) => (async () => {
+      while (prefetchCursor < epList.length) {
+        if (job.cancelled || signal.aborted) return;
+        if (prefetchCursor - activeQueueCursor > 18) {
+          await dl.sleep(200, signal);
           continue;
         }
-
-        broadcastProgress({
-          type: 'episode',
-          epNum,
-          status: 'downloading',
-          percent: 20
-        });
-
-        const elapsedSec = Math.max(1, (Date.now() - downloadStartTime) / 1000);
-        const currentSpeedMb = totalBytesDownloaded > 0 ? ((totalBytesDownloaded / (1024 * 1024)) / elapsedSec).toFixed(1) : '8.5';
-        const remainingEps = queue.length - completedCount;
-        const estRemainingSec = completedCount > 0 ? Math.round(remainingEps * (elapsedSec / completedCount)) : remainingEps * 2;
-
-        broadcastProgress({
-          type: 'global',
-          status: 'progress',
-          currentEp: epNum,
-          completed: completedCount,
-          total: queue.length,
-          speed: currentSpeedMb + ' MB/s',
-          eta: estRemainingSec,
-          progress: Math.round(8 + (completedCount / queue.length) * 82),
-          message: `🔥 កំពុងទាញយកភាគទី ${epNum}/${totalEps} (${completedCount}/${queue.length} ភាគចប់)...`
-        });
-
-        // Fast retrieval from prefetch cache or on-demand fetch
-        let play = playUrlMap.get(epNum);
-        if (!play) {
-          try {
-            play = await fetchPlayUrlSingle(epData.vid, seriesId);
-            if (play && play.url) playUrlMap.set(epNum, play);
-          } catch (err) {
-            console.warn(`បរាជ័យ Link ភាគ ${epNum}:`, err.message);
-            broadcastProgress({ type: 'episode', epNum, status: 'error' });
-            continue;
-          }
+        const ok = await prefetchNextBatch(epList);
+        if (!ok && prefetchCursor < epList.length) {
+          await dl.sleep(100, signal);
         }
+      }
+    })();
 
-        const urls = [
-          ...(play.variants ? play.variants.map(v => v.url) : []),
-          play.url
-        ].filter(Boolean);
+    function updateOverallProgress() {
+      const done = completedMap.size;
+      const fail = failedMap.size;
+      job.completed = done;
+      job.failed = fail;
+      const elapsedSec = Math.max(1, (Date.now() - job.startedAt) / 1000);
+      const finishedCount = done + fail;
+      const left = Math.max(0, job.total - finishedCount);
+      job.etaSec = finishedCount > 0 ? Math.round(left * (elapsedSec / finishedCount)) : Math.round(left * 2.5);
+      const maxBar = autoMerge ? 88 : 99;
+      job.progress = job.total > 0 ? Math.min(maxBar, Math.round(5 + (finishedCount / job.total) * (maxBar - 5))) : 5;
+    }
 
-        urls.sort((a, b) => {
-          const score = u => (u.includes('v3-') ? 3 : (u.includes('v26-') ? 2 : 1));
-          return score(b) - score(a);
-        });
+    async function processOneEpisode(item, isRetryPass = false) {
+      if (job.cancelled || signal.aborted) return;
+      const { epNum, epData } = item;
+      const finalFileName = dl.resolveEpisodeFileName(cleanTitle, epNum, totalDramaEps);
+      const finalMp4 = path.join(outputDir, finalFileName);
 
-        let success = false;
-        for (const u of urls) {
-          if (job.cancelled) break;
-          try {
-            broadcastProgress({ type: 'episode', epNum, status: 'downloading', percent: 45 });
-            const ok = await runCurlAsync([
-              '-s', '-L',
-              '--tcp-fastopen',
-              '--no-keepalive',
-              '--compressed',
-              '--connect-timeout', '8',
-              '-m', '120',
-              '--retry', '2',
-              '--retry-delay', '1',
-              '--retry-connrefused',
-              u,
-              '-o', tempEncrypted
-            ]);
-            if (ok && fs.existsSync(tempEncrypted) && fs.statSync(tempEncrypted).size > 500000) {
-              success = true;
-              break;
+      // Check existing valid file (handles resume cleanly)
+      const existingFile = dl.findExistingEpisodeFile(outputDir, cleanTitle, epNum, totalDramaEps);
+      if (existingFile && dl.isValidMp4File(existingFile)) {
+        completedMap.set(epNum, existingFile);
+        failedMap.delete(epNum);
+        const mb = (fs.statSync(existingFile).size / (1024 * 1024)).toFixed(1);
+        job.episodeStates[epNum] = { status: 'done', percent: 100, size: `${mb} MB`, text: `✓ ${mb} MB` };
+        updateOverallProgress();
+        emitSnapshot(job, false);
+        return;
+      }
+
+      const tempEnc = path.join(outputDir, `temp_ep_${epNum}_${Date.now()}.enc`);
+      const tempOut = path.join(outputDir, `temp_out_${epNum}_${Date.now()}.mp4`);
+
+      try {
+        job.episodeStates[epNum] = { status: 'resolving', percent: 8, text: '🔍 រក Link...' };
+        emitSnapshot(job, false);
+
+        const play = await getPlayInfoCached(epNum, epData);
+        if (job.cancelled || signal.aborted) return;
+
+        const variants = dl.extractVariants(play, qualityMode);
+        if (!variants.length) throw new Error('គ្មាន Link ទាញយកវីដេអូសម្រាប់ភាគនេះ');
+
+        let downloadedVariant = null;
+        let lastDlError = null;
+
+        await GLOBAL_DOWNLOAD_SEM(async () => {
+          for (let vi = 0; vi < variants.length; vi++) {
+            if (job.cancelled || signal.aborted) return;
+            const variant = variants[vi];
+            const isHls = variant.format === 'hls' || /\.m3u8(\?|$)/i.test(variant.url);
+            const label = isHls ? 'HLS Stream' : (variant.codec === 'bytevc2' ? `ByteVC2 ${variant.quality}` : `${variant.codec || 'MP4'} ${variant.quality}`.trim());
+            job.episodeStates[epNum] = { status: 'downloading', percent: 12, text: `⬇️ ទាញយក (${label})` };
+            job.message = `⬇️ កំពុងទាញយកភាគ ${epNum}/${totalDramaEps} (${completedMap.size}/${job.total} រួចរាល់)...`;
+            emitSnapshot(job, false);
+
+            if (isHls) {
+              try {
+                await dl.downloadHlsToMp4(variant, tempOut, {
+                  signal,
+                  activeChildren: job.activeChildren,
+                  onBytesProgress: (delta, dlPct) => {
+                    recordBytes(delta);
+                    job.episodeStates[epNum] = { status: 'downloading', percent: Math.min(92, dlPct), text: `⬇️ HLS ${dlPct}%` };
+                    updateOverallProgress();
+                    emitSnapshot(job, false);
+                  },
+                });
+                downloadedVariant = { ...variant, format: 'hls' };
+                break;
+              } catch (hlsErr) {
+                if (job.cancelled || signal.aborted || hlsErr.message === 'CANCELLED') return;
+                lastDlError = hlsErr;
+                try { if (fs.existsSync(tempOut)) fs.unlinkSync(tempOut); } catch (_) {}
+                continue;
+              }
             }
-          } catch (_) {}
+
+            if (dl.isAria2Available()) {
+              try {
+                await dl.downloadWithAria2(variant, tempEnc, {
+                  signal,
+                  activeChildren: job.activeChildren,
+                  onBytesProgress: (delta, dlPct) => {
+                    recordBytes(delta);
+                    const scaledPct = Math.min(54, 12 + Math.round(dlPct * 0.42));
+                    job.episodeStates[epNum] = { status: 'downloading', percent: scaledPct, text: `⚡ 16x ${dlPct}%` };
+                    updateOverallProgress();
+                    emitSnapshot(job, false);
+                  },
+                });
+                downloadedVariant = variant;
+                break;
+              } catch (ariaErr) {
+                if (job.cancelled || signal.aborted || ariaErr.message === 'CANCELLED') return;
+                lastDlError = ariaErr;
+                try { if (fs.existsSync(tempEnc)) fs.unlinkSync(tempEnc); } catch (_) {}
+              }
+            }
+
+            try {
+              await dl.downloadUrlStream(variant, tempEnc, {
+                signal,
+                onBytesProgress: (delta, dlPct) => {
+                  recordBytes(delta);
+                  const scaledPct = Math.min(54, 12 + Math.round(dlPct * 0.42));
+                  job.episodeStates[epNum] = { status: 'downloading', percent: scaledPct, text: `⬇️ ${dlPct}%` };
+                  updateOverallProgress();
+                  emitSnapshot(job, false);
+                },
+              });
+              downloadedVariant = variant;
+              break;
+            } catch (streamErr) {
+              if (job.cancelled || signal.aborted || streamErr.message === 'CANCELLED') return;
+              lastDlError = streamErr;
+              try { if (fs.existsSync(tempEnc)) fs.unlinkSync(tempEnc); } catch (_) {}
+              // On last variant or HTTP failure, try curl.exe fallback once for that variant
+              if (vi === variants.length - 1) {
+                try {
+                  const bytes = await dl.downloadWithCurl(variant, tempEnc, { signal, activeChildren: job.activeChildren });
+                  recordBytes(bytes);
+                  downloadedVariant = variant;
+                  break;
+                } catch (curlErr) {
+                  if (job.cancelled || signal.aborted || curlErr.message === 'CANCELLED') return;
+                  lastDlError = curlErr;
+                }
+              }
+            }
+          }
+        }, signal);
+
+        if (!downloadedVariant) {
+          throw lastDlError || new Error('បរាជ័យក្នុងការទាញយកពី CDN');
         }
 
-        if (job.cancelled) {
-          if (fs.existsSync(tempEncrypted)) try { fs.unlinkSync(tempEncrypted); } catch (_) {}
-          return;
-        }
+        const isBytevc2 = downloadedVariant.codec === 'bytevc2';
+        if (downloadedVariant.format !== 'hls') {
+          if (!fs.existsSync(tempEnc)) {
+            throw lastDlError || new Error('បរាជ័យក្នុងការទាញយកពី CDN');
+          }
+          // Decrypt or transcode into verified tempOut
+          if (isBytevc2) {
+            pushJobLog(job, `⚙️ ភាគ ${epNum}: កំពុងបំប្លែង ByteVC2 (${downloadedVariant.quality || 'HD'}) -> H.264...`);
+          }
 
-        if (!success) {
-          broadcastProgress({ type: 'episode', epNum, status: 'error' });
-          continue;
-        }
-
-        // Decrypt with FFmpeg
-        broadcastProgress({ type: 'episode', epNum, status: 'downloading', percent: 85 });
-        if (play.contentKey) {
-          await new Promise((resolve) => {
-            const child = spawn(ffmpegExe, [
-              '-y', '-hide_banner', '-loglevel', 'error',
-              '-decryption_key', play.contentKey,
-              '-i', tempEncrypted,
-              '-map', '0:v:0', '-map', '0:a?',
-              '-c', 'copy',
-              '-movflags', '+faststart',
-              '-f', 'mp4', finalMp4
-            ], { stdio: 'ignore' });
-            child.on('close', resolve);
+          await dl.processDownloadedEpisode(downloadedVariant, tempEnc, tempOut, {
+            signal,
+            activeChildren: job.activeChildren,
+            bytevc2Sem,
+            onPhaseProgress: (phase, pct) => {
+              const labelMap = {
+                queued_transcode: '⏳ រង់ចាំបំប្លែង...',
+                transcoding: `⚙️ បំប្លែង ${pct}%`,
+                decrypting: '🔓 ដោះសោ...',
+                verifying: '🔍 ផ្ទៀងផ្ទាត់...',
+              };
+              job.episodeStates[epNum] = { status: phase, percent: pct, text: labelMap[phase] || '⚙️ បំប្លែង...' };
+              job.message = isBytevc2
+                ? `⚙️ កំពុងបំប្លែងភាគ ${epNum} (ByteVC2 -> MP4: ${pct}%) | រួចរាល់ ${completedMap.size}/${job.total}`
+                : job.message;
+              emitSnapshot(job, false);
+            },
           });
-        } else {
-          fs.renameSync(tempEncrypted, finalMp4);
         }
 
-        if (fs.existsSync(tempEncrypted)) {
-          try { fs.unlinkSync(tempEncrypted); } catch (_) {}
+        if (job.cancelled || signal.aborted) return;
+
+        // Strictly verify file before publishing!
+        if (!dl.isValidMp4File(tempOut)) {
+          throw new Error('ឯកសារក្រោយបំប្លែងមិនត្រឹមត្រូវ ឬ 0 Bytes');
         }
 
         if (fs.existsSync(finalMp4)) {
-          downloadedFiles.push(finalMp4);
-          completedCount++;
-          const finalBytes = fs.statSync(finalMp4).size;
-          totalBytesDownloaded += finalBytes;
-          const finalMb = (finalBytes / (1024 * 1024)).toFixed(1);
+          try { fs.unlinkSync(finalMp4); } catch (_) {}
+        }
+        await fsp.rename(tempOut, finalMp4);
 
-          const liveElapsedSec = Math.max(1, (Date.now() - downloadStartTime) / 1000);
-          const liveSpeedMb = ((totalBytesDownloaded / (1024 * 1024)) / liveElapsedSec).toFixed(1);
-          const leftEps = queue.length - completedCount;
-          const liveEtaSec = Math.round(leftEps * (liveElapsedSec / completedCount));
+        const finalBytes = fs.statSync(finalMp4).size;
+        const mb = (finalBytes / (1024 * 1024)).toFixed(1);
+        completedMap.set(epNum, finalMp4);
+        failedMap.delete(epNum);
+        job.episodeStates[epNum] = { status: 'done', percent: 100, size: `${mb} MB`, text: `✓ ${mb} MB` };
+        pushJobLog(job, `✅ ភាគ ${epNum}: រួចរាល់ (${mb} MB${isBytevc2 ? ' • H.264' : ''})`);
+        updateOverallProgress();
+        emitSnapshot(job, true);
+      } catch (err) {
+        if (job.cancelled || signal.aborted || err.message === 'CANCELLED') return;
+        const errMsg = String(err.message || 'Unknown error').slice(0, 120);
+        failedMap.set(epNum, errMsg);
+        job.episodeStates[epNum] = { status: 'error', percent: 0, error: errMsg, text: '❌ បរាជ័យ' };
+        pushJobLog(job, `❌ ភាគ ${epNum}${isRetryPass ? ' (Retry)' : ''}: ${errMsg}`);
+        updateOverallProgress();
+        emitSnapshot(job, true);
+      } finally {
+        try { if (fs.existsSync(tempEnc)) fs.unlinkSync(tempEnc); } catch (_) {}
+        try { if (fs.existsSync(tempOut)) fs.unlinkSync(tempOut); } catch (_) {}
+      }
+    }
 
-          broadcastProgress({
-            type: 'episode',
-            epNum,
-            status: 'done',
-            size: finalMb + ' MB'
+    async function runWorkerWave(epList, concurrency, isRetryPass = false) {
+      activeQueueCursor = 0;
+      prefetchCursor = 0;
+      await prefetchNextBatch(epList);
+      if (job.cancelled || signal.aborted) return;
+      const prefetcherPromise = startPrefetchLoop(epList);
+      const worker = async () => {
+        while (activeQueueCursor < epList.length) {
+          if (job.cancelled || signal.aborted) return;
+          const item = epList[activeQueueCursor++];
+          if (!item) break;
+          await processOneEpisode(item, isRetryPass);
+        }
+      };
+      const workerCount = Math.min(concurrency, epList.length);
+      await Promise.all([
+        prefetcherPromise,
+        ...Array.from({ length: workerCount }, () => worker()),
+      ]);
+    }
+
+    // PASS 1: High-speed parallel download + decrypt/transcode
+    const pass1List = targetNums.map(num => ({
+      epNum: num,
+      epData: info.episodes[num - 1] || { vid_index: num },
+    }));
+    await runWorkerWave(pass1List, activeConcurrency, false);
+
+    if (job.cancelled || signal.aborted) return;
+
+    // PASS 2: Automatic gentle recovery pass for any non-VIP failed episodes
+    const retryNumsAll = [...failedMap.entries()]
+      .filter(([, errMsg]) => !String(errMsg || '').includes('ជាប់សោ VIP'))
+      .map(([ep]) => ep)
+      .sort((a, b) => a - b);
+    if (retryNumsAll.length > 0) {
+      const retryNums = retryNumsAll;
+      job.status = 'retrying';
+      job.message = `🔄 កំពុងទាញយកឡើងវិញដោយស្វ័យប្រវត្តិ ${retryNums.length} ភាគដែលបរាជ័យ...`;
+      pushJobLog(job, job.message);
+      emitSnapshot(job, true);
+
+      // Clear cached failed URLs and give upstream 1.5s breathing room
+      retryNums.forEach(n => playUrlMap.delete(n));
+      await dl.sleep(1500, signal);
+      if (job.cancelled || signal.aborted) return;
+
+      const pass2List = retryNums.map(num => ({
+        epNum: num,
+        epData: info.episodes[num - 1] || { vid_index: num },
+      }));
+      await runWorkerWave(pass2List, Math.min(2, pass2List.length), true);
+    }
+
+    dl.syncEpisodeFileTimestamps(outputDir);
+
+    if (job.cancelled || signal.aborted) return;
+
+    // Optional Auto-Merge Full Movie (includes all valid downloaded episodes in folder sorted 1..N)
+    if (autoMerge) {
+      const allValidEntries = [];
+      for (let ep = 1; ep <= totalDramaEps; ep++) {
+        const f = dl.findExistingEpisodeFile(outputDir, cleanTitle, ep, totalDramaEps);
+        if (f && dl.isValidMp4File(f)) {
+          allValidEntries.push({ epNum: ep, file: f });
+        }
+      }
+      if (allValidEntries.length >= 2) {
+        job.status = 'merging';
+        pushJobLog(job, `🎞️ ចាប់ផ្ដើមផ្គុំ Full Movie ចំនួន ${allValidEntries.length} ភាគ...`);
+        emitSnapshot(job, true);
+        try {
+          const merged = await dl.mergeEpisodesToMovie(outputDir, cleanTitle, allValidEntries, {
+            signal,
+            activeChildren: job.activeChildren,
+            onProgress: (pct, msg) => {
+              job.progress = pct;
+              job.message = msg;
+              emitSnapshot(job, false);
+            },
           });
-          broadcastProgress({
-            type: 'global',
-            status: 'progress',
-            currentEp: epNum,
-            completed: completedCount,
-            total: queue.length,
-            speed: liveSpeedMb + ' MB/s',
-            eta: liveEtaSec,
-            progress: Math.round(8 + (completedCount / queue.length) * 82),
-            message: `✓ ភាគ ${epNum} រួចរាល់ (${finalMb} MB) | ល្បឿន: ${liveSpeedMb} MB/s | នៅសល់: ${leftEps} ភាគ`
-          });
+          pushJobLog(job, `🎬 ផ្គុំ Full Movie ជោគជ័យ: ${path.basename(merged.path)} (${merged.sizeMb} MB)`);
+        } catch (mergeErr) {
+          if (job.cancelled || signal.aborted) return;
+          pushJobLog(job, `⚠️ ផ្គុំ Full Movie មិនបានសម្រេច: ${mergeErr.message}`);
         }
       }
     }
 
-    const workerPromises = [];
-    for (let i = 0; i < activeConcurrency; i++) {
-      workerPromises.push(downloadWorker());
+    // Final honest status report
+    job.completed = completedMap.size;
+    job.failed = failedMap.size;
+    job.failedList = [...failedMap.entries()].map(([ep, err]) => ({ ep, error: err }));
+    job.progress = 100;
+    job.etaSec = 0;
+    job.speedMb = 0;
+    job.speedText = '0.0 MB/s';
+    job.finishedAt = Date.now();
+    const totalTimeSec = Math.max(1, Math.round((job.finishedAt - job.startedAt) / 1000));
+
+    if (failedMap.size === 0) {
+      job.status = 'done';
+      job.message = `🎉 ជោគជ័យ ១០០%! ទាញយកចប់គ្រប់ ${completedMap.size} ភាគក្នុងរយៈពេល ${totalTimeSec} វិនាទី!`;
+    } else {
+      job.status = 'partial';
+      const failedPreview = job.failedList.slice(0, 5).map(x => `EP${x.ep}`).join(', ');
+      job.message = `⚠️ បានទាញយក ${completedMap.size}/${job.total} ភាគ (បរាជ័យ ${failedMap.size} ភាគ: ${failedPreview}) — ចុច "🔄 ទាញភាគបរាជ័យឡើងវិញ"!`;
     }
-    await Promise.all(workerPromises);
-
-    if (autoMerge && downloadedFiles.length > 1) {
-      broadcastProgress({ type: 'global', status: 'merging', progress: 95, message: 'កំពុងផ្គុំគ្រប់ភាគទាំងអស់ចូលគ្នាជា Full Movie...' });
-      const concatListFile = path.join(outputDir, 'concat_list.txt');
-      const mergedOutput = path.join(outputDir, `${cleanTitle}_រឿងពេញចប់.mp4`);
-      
-      downloadedFiles.sort();
-      const fileListContent = downloadedFiles.map(f => `file '${f.replace(/\\/g, '/')}'`).join('\n');
-      fs.writeFileSync(concatListFile, fileListContent);
-
-      await new Promise(resolve => {
-        const child = spawn(ffmpegExe, [
-          '-y', '-hide_banner', '-loglevel', 'error',
-          '-f', 'concat', '-safe', '0',
-          '-i', concatListFile,
-          '-c', 'copy',
-          '-movflags', '+faststart',
-          mergedOutput
-        ], { stdio: 'ignore' });
-        child.on('close', resolve);
-      });
-
-      if (fs.existsSync(concatListFile)) {
-        try { fs.unlinkSync(concatListFile); } catch (_) {}
-      }
-    }
-
-    broadcastProgress({
-      type: 'global',
-      status: 'done',
-      progress: 100,
-      outputDir,
-      message: `🎉 ជោគជ័យ ១០០%! បានទាញយកចប់សព្វគ្រប់ចំនួន ${downloadedFiles.length} ភាគ! រក្សាទុកក្នុង ${outputDir}`
-    });
-
+    pushJobLog(job, job.message);
+    emitSnapshot(job, true);
   } catch (err) {
-    broadcastProgress({ type: 'global', status: 'error', message: 'កំហុស: ' + err.message });
-  } finally {
-    currentDownloadJob = null;
+    if (job.cancelled || signal.aborted) return;
+    job.status = 'error';
+    job.speedMb = 0;
+    job.speedText = '0.0 MB/s';
+    job.finishedAt = Date.now();
+    job.message = '❌ កំហុស: ' + err.message;
+    pushJobLog(job, job.message);
+    emitSnapshot(job, true);
   }
 }
 
-const HTML_CONTENT = `<!DOCTYPE html>
-<html lang="km">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HDRG Pro Plus Studio - All-in-One Downloader</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎬</text></svg>">
-  <style>
-    :root {
-      --bg-main: #0c1017;
-      --bg-panel: #131b26;
-      --bg-card: #182332;
-      --bg-hover: #1f2d40;
-      --primary: #3182ce;
-      --accent-green: #38a169;
-      --accent-orange: #dd6b20;
-      --border: #233347;
-      --text: #e2e8f0;
-      --text-muted: #8899ac;
+// ===== Gemini AI Helper =====
+const GEMINI_MODELS = [
+  'gemini-flash-lite-latest',
+  'gemini-flash-latest',
+  'gemini-3.5-flash-lite',
+  'gemini-3.8-flash',
+];
+
+async function testGeminiKey(apiKey) {
+  if (!apiKey) throw new Error('សូមបញ្ចូល API Key!');
+  let lastError = null;
+  for (const model of GEMINI_MODELS) {
+    try {
+      return await callGeminiModel(model, apiKey, "Translate '你好' to Khmer in 1 word.");
+    } catch (err) {
+      lastError = err;
+      const m = err.message || '';
+      if (m.includes('API_KEY_INVALID') || m.includes('API key not valid')) throw err;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Khmer OS Siemreap", sans-serif; }
-    body { background: var(--bg-main); color: var(--text); min-height: 100vh; overflow-x: hidden; display: flex; flex-direction: column; }
-    
-    /* Top Bar */
-    .topbar { height: 60px; background: #090d14; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; gap: 14px; position: sticky; top: 0; z-index: 50; }
-    .brand { display: flex; align-items: center; gap: 10px; font-weight: bold; font-size: 18px; color: #fff; }
-    .brand-badge { background: linear-gradient(135deg, #e53e3e, #dd6b20); color: #fff; font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: bold; }
-    
-    .search-bar { flex: 1; max-width: 580px; display: flex; background: var(--bg-panel); border: 1.5px solid var(--border); border-radius: 8px; overflow: hidden; }
-    .search-input { flex: 1; background: transparent; border: none; padding: 10px 14px; color: #fff; font-size: 14px; outline: none; }
-    .search-btn { background: var(--primary); color: #fff; border: none; padding: 0 18px; cursor: pointer; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
-    .search-btn:hover { background: #2b6cb0; }
-    .btn-paste { background: #1a2636; border: none; color: #cbd5e0; padding: 0 14px; cursor: pointer; font-size: 13px; border-right: 1px solid var(--border); }
-    .btn-paste:hover { background: #233347; color: #fff; }
+  }
+  throw lastError;
+}
 
-    .top-actions { display: flex; gap: 10px; }
-    .btn-folder { background: var(--bg-panel); border: 1.5px solid var(--border); color: #cbd5e0; padding: 8px 14px; border-radius: 8px; font-size: 13px; cursor: pointer; font-weight: 600; }
-    .btn-folder:hover { background: var(--bg-hover); color: #fff; }
+async function callGemini(prompt) {
+  const cfg = loadConfig();
+  const apiKey = cfg.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('មិនទាន់ដាក់ Gemini API Key — ចុច 🔑 Gemini Key ក្នុង Topbar');
 
-    /* Layout */
-    .app-body { flex: 1; display: flex; }
-    
-    /* Left Panel: Multi-Genre Drama Library */
-    .left-panel { width: 380px; background: var(--bg-panel); border-right: 1px solid var(--border); padding: 14px; display: flex; flex-direction: column; gap: 10px; height: calc(100vh - 60px); }
-    .panel-top { display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
-    .panel-title { font-size: 15px; font-weight: 700; color: #fff; display: flex; justify-content: space-between; align-items: center; }
-    .panel-subtitle { font-size: 11px; color: #63b3ed; display: flex; justify-content: space-between; align-items: center; }
-    
-    /* Category Filter Tabs */
-    .category-tabs-wrap { overflow-x: auto; padding: 2px 0 6px 0; margin-top: 2px; }
-    .category-tabs-wrap::-webkit-scrollbar { height: 4px; }
-    .category-tabs-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-    .category-tabs { display: flex; gap: 6px; }
-    .cat-tab { background: #182332; border: 1px solid var(--border); color: #a0aec0; padding: 5px 10px; border-radius: 16px; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: 0.2s; display: flex; align-items: center; gap: 4px; }
-    .cat-tab:hover { background: #233347; color: #fff; border-color: var(--primary); }
-    .cat-tab.active { background: linear-gradient(135deg, #3182ce, #2b6cb0); color: #fff; border-color: #63b3ed; box-shadow: 0 2px 8px rgba(49, 130, 206, 0.4); }
-
-    .library-search-input { width: 100%; background: #0c1017; border: 1px solid var(--border); border-radius: 6px; padding: 7px 12px; color: #fff; font-size: 12px; outline: none; }
-    .library-search-input:focus { border-color: var(--primary); }
-
-    .library-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
-    
-    /* Drama Mini Card with Badges */
-    .drama-card-mini { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; display: flex; gap: 10px; cursor: pointer; transition: 0.2s; position: relative; align-items: center; }
-    .drama-card-mini:hover { border-color: var(--primary); transform: translateX(3px); background: var(--bg-hover); box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
-    
-    .rank-badge { position: absolute; top: 6px; left: 6px; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px; z-index: 2; box-shadow: 0 2px 5px rgba(0,0,0,0.8); }
-    .rank-gold { background: linear-gradient(135deg, #d69e2e, #b7791f); color: #fff; }
-    .rank-silver { background: linear-gradient(135deg, #a0aec0, #718096); color: #fff; }
-    .rank-bronze { background: linear-gradient(135deg, #dd6b20, #c05621); color: #fff; }
-    .rank-normal { background: rgba(26, 54, 93, 0.85); color: #90cdf4; border: 1px solid #2b6cb0; }
-
-    .badge-genre { background: rgba(49, 130, 206, 0.35); color: #90cdf4; border: 1px solid rgba(49, 130, 206, 0.7); }
-    .badge-sad { background: rgba(229, 62, 62, 0.3); color: #feb2b2; border: 1px solid #e53e3e; }
-    .badge-sweet { background: rgba(237, 100, 166, 0.3); color: #fbb6ce; border: 1px solid #ed64a6; }
-    .badge-ceo { background: rgba(214, 158, 46, 0.3); color: #f6e05e; border: 1px solid #d69e2e; }
-    .badge-comeback { background: rgba(72, 187, 120, 0.3); color: #9ae6b4; border: 1px solid #48bb78; }
-    .badge-costume { background: rgba(159, 122, 234, 0.3); color: #d6bcfa; border: 1px solid #9f7aea; }
-    .badge-comedy { background: rgba(237, 137, 54, 0.3); color: #fbd38d; border: 1px solid #ed8936; }
-    .badge-family { background: rgba(56, 178, 172, 0.3); color: #81e6d9; border: 1px solid #38b2ac; }
-
-    .mini-cover { width: 52px; height: 74px; border-radius: 6px; object-fit: cover; background: #0c1017; flex-shrink: 0; }
-    .mini-info { display: flex; flex-direction: column; justify-content: center; overflow: hidden; flex: 1; }
-    .mini-title { font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .mini-khmer { font-size: 11px; color: #63b3ed; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .mini-heat { font-size: 11px; color: #f6ad55; margin-bottom: 4px; }
-    .mini-tags { display: flex; gap: 4px; flex-wrap: wrap; }
-    .mini-tag { font-size: 9px; padding: 1px 5px; border-radius: 3px; background: rgba(49, 130, 206, 0.2); color: #63b3ed; font-weight: 600; }
-
-    /* Right Panel */
-    .main-panel { flex: 1; padding: 20px 24px; display: flex; flex-direction: column; gap: 18px; height: calc(100vh - 60px); overflow-y: auto; }
-
-    /* Drama Banner */
-    .drama-banner { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px; display: flex; gap: 22px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
-    .banner-cover { width: 120px; height: 165px; border-radius: 8px; object-fit: cover; background: #0c1017; box-shadow: 0 4px 12px rgba(0,0,0,0.5); flex-shrink: 0; }
-    .banner-details { flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
-    .banner-title { font-size: 22px; font-weight: 700; color: #fff; margin-bottom: 4px; }
-    .banner-subtitle { font-size: 14px; color: #63b3ed; margin-bottom: 8px; }
-    .banner-meta { display: flex; gap: 10px; font-size: 13px; color: var(--text-muted); margin-bottom: 14px; }
-    
-    /* Huge Download Action Bar */
-    .download-bar { background: #0f1622; border: 1.5px solid #2b6cb0; border-radius: 12px; padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
-    .btn-download-giant { background: linear-gradient(135deg, #22543d, #2f855a); color: #fff; border: 1.5px solid #48bb78; padding: 14px 26px; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 15px rgba(56, 161, 105, 0.4); transition: 0.2s; }
-    .btn-download-giant:hover:not(:disabled) { background: linear-gradient(135deg, #2f855a, #38a169); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(56, 161, 105, 0.6); }
-    .btn-test-ep { background: linear-gradient(135deg, #3182ce, #2b6cb0); color: #fff; border: none; padding: 14px 20px; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s; }
-    .btn-test-ep:hover { background: #2b6cb0; transform: translateY(-1px); }
-    .btn-stop-all { background: linear-gradient(135deg, #9b2c2c, #742a2a); border: 1.5px solid #e53e3e; color: #fff; padding: 14px 20px; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s; }
-    .btn-stop-all:hover { background: linear-gradient(135deg, #c53030, #9b2c2c); transform: translateY(-1px); box-shadow: 0 4px 15px rgba(229, 62, 62, 0.4); }
-
-    /* Turbo Speed Selector */
-    .speed-selector-box { display: flex; align-items: center; gap: 8px; background: #0c1017; padding: 6px 12px; border-radius: 10px; border: 1px solid #233347; }
-    .speed-pill-group { display: flex; gap: 6px; }
-    .speed-pill { background: #141c2b; border: 1px solid #2b3b52; color: #94a3b8; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s; }
-    .speed-pill:hover { background: #1e293b; color: #fff; }
-    .speed-pill.active { background: linear-gradient(135deg, #2b6cb0, #3182ce); color: #fff; border-color: #63b3ed; box-shadow: 0 0 10px rgba(49, 130, 206, 0.4); }
-    .speed-pill.turbo.active { background: linear-gradient(135deg, #c53030, #dd6b20); border-color: #f6ad55; box-shadow: 0 0 14px rgba(221, 107, 32, 0.6); }
-
-    /* Save Path Bar & Folder Customizer */
-    .save-path-bar { background: #0c1017; border: 1px solid #233347; border-radius: 8px; padding: 8px 14px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
-    .path-badge { background: #1a2738; color: #63b3ed; padding: 3px 10px; border-radius: 5px; font-family: monospace; font-size: 13px; font-weight: 600; border: 1px solid #2b6cb0; word-break: break-all; }
-    .btn-mini-action { background: #141c2b; border: 1px solid #2d3748; color: #cbd5e0; padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: 0.2s; }
-    .btn-mini-action:hover { background: #1e293b; color: #fff; border-color: #4a5568; }
-    .btn-browse-folder { background: linear-gradient(135deg, #2b6cb0, #3182ce); color: #fff; border: 1px solid #63b3ed; padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px; white-space: nowrap; transition: 0.2s; }
-    .btn-browse-folder:hover { background: linear-gradient(135deg, #3182ce, #4299e1); transform: translateY(-1px); }
-    .preset-pill { background: #141c2b; border: 1px solid #233347; color: #a0aec0; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; transition: 0.2s; }
-    .preset-pill:hover { background: #1e293b; color: #63b3ed; border-color: #3182ce; }
-
-    /* Live Progress Card (Visible when downloading) */
-    .progress-card { background: #131d2a; border: 1.5px solid #38a169; border-radius: 14px; padding: 18px 22px; display: none; box-shadow: 0 8px 25px rgba(0,0,0,0.5); }
-    .progress-bar-bg { width: 100%; height: 16px; background: #0c1017; border-radius: 8px; overflow: hidden; margin: 12px 0 8px 0; border: 1px solid var(--border); box-shadow: inset 0 2px 4px rgba(0,0,0,0.6); }
-    .progress-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #dd6b20, #38a169, #48bb78); transition: width 0.3s; box-shadow: 0 0 12px rgba(72, 187, 120, 0.6); }
-    .btn-cancel-download { background: linear-gradient(135deg, #9b2c2c, #742a2a); border: 1px solid #e53e3e; color: #fff; padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s; }
-    .btn-cancel-download:hover { background: linear-gradient(135deg, #c53030, #9b2c2c); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(229, 62, 62, 0.5); }
-
-    /* Guide Box */
-    .guide-box { background: rgba(49, 130, 206, 0.1); border: 1px dashed #3182ce; border-radius: 10px; padding: 12px 16px; font-size: 13px; line-height: 1.6; color: #bee3f8; }
-
-    /* Episodes Section */
-    .episodes-section { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
-    .ep-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-    .ep-title { font-size: 16px; font-weight: 700; color: #fff; }
-    .ep-tools { display: flex; gap: 8px; align-items: center; }
-    .btn-ep-tool { background: var(--bg-card); border: 1px solid var(--border); color: #cbd5e0; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; font-weight: 600; }
-    .btn-ep-tool:hover { background: var(--bg-hover); color: #fff; }
-
-    /* The Pills */
-    .episodes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; max-height: 380px; overflow-y: auto; padding: 4px; }
-    .ep-pill { height: 44px; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; cursor: pointer; transition: 0.15s; border: 1.5px solid var(--border); position: relative; }
-    
-    .ep-pill.done { background: #22543d; color: #9ae6b4; border-color: #38a169; }
-    .ep-pill.downloading { background: #9c4221; color: #fff; border-color: #dd6b20; animation: pulse 0.8s infinite alternate; }
-    .ep-pill.pending { background: #1a365d; color: #bee3f8; border-color: #3182ce; }
-    .ep-pill.pending:hover { background: #2a4365; border-color: #63b3ed; transform: scale(1.03); }
-    .ep-pill.unselected { background: #182332; color: #718096; border-color: #233347; opacity: 0.6; }
-    .ep-subtext { font-size: 10px; font-weight: normal; margin-top: 1px; }
-
-    @keyframes pulse {
-      0% { opacity: 0.8; transform: scale(0.99); }
-      100% { opacity: 1; transform: scale(1.02); }
+  let lastError = null;
+  for (const model of GEMINI_MODELS) {
+    try {
+      return await callGeminiModel(model, apiKey, prompt);
+    } catch (err) {
+      lastError = err;
+      const m = err.message || '';
+      if (m.includes('API_KEY_INVALID') || m.includes('API key not valid')) throw err;
     }
-  </style>
-</head>
-<body>
-
-  <!-- Top Bar -->
-  <div class="topbar">
-    <div class="brand">
-      <span>🎬 HDRG PRO+</span>
-      <span class="brand-badge">TOP 100 STUDIO</span>
-    </div>
-
-    <div class="search-bar">
-      <button class="btn-paste" onclick="pasteClipboard()">📋 Paste</button>
-      <input type="text" id="globalSearchInput" class="search-input" placeholder="វាយឈ្មោះរឿង (ឧ. 总裁) ឬ Series ID ឬ Link...">
-      <button class="search-btn" onclick="handleSearch()">🔍 ស្វែងរក</button>
-    </div>
-
-    <div class="top-actions">
-      <a href="http://localhost:3001" target="_blank" class="btn-folder" style="border-color: #8b5cf6; color: #c4b5fd; text-decoration: none; display: flex; align-items: center; gap: 6px;" title="បើកកម្មវិធីបកប្រែអក្សររត់ EZARG (Port 3001)">
-        📝 បកប្រែ Subtitle
-      </a>
-      <button class="btn-folder" onclick="openFolderModal()" id="topFolderBtn" style="border-color: #38a169; color: #9ae6b4; display: flex; align-items: center; gap: 6px;" title="ចុចដើម្បីផ្លាស់ប្តូរទីតាំងរក្សាទុក">
-        📁 <span id="topFolderLabel">D:\HDRG</span>
-      </button>
-      <button class="btn-folder" onclick="openKeyModal()" style="border-color: #3182ce; color: #63b3ed; display: flex; align-items: center; gap: 6px;">
-        <span id="keyStatusDot">⚪</span> 🔑 Gemini Key
-      </button>
-      <button class="btn-folder" onclick="downloadTool()" id="dlToolBtn" style="border-color: #48bb78; color: #68d391; display: flex; align-items: center; gap: 6px; position: relative; overflow: hidden;">
-        <span id="dlToolIcon">⬇️</span> <span id="dlToolLabel">ទាញយក Tool</span>
-        <span id="dlToolProgress" style="display:none; position:absolute; bottom:0; left:0; height:3px; background:#48bb78; width:0%; transition:width 0.3s;"></span>
-      </button>
-      <button class="btn-folder" id="openFolderBtn" onclick="openFolder()">📂 បើក Folder</button>
-    </div>
-  </div>
-
-  <div class="app-body">
-    
-    <!-- Left Panel: Multi-Genre Drama Library -->
-    <div class="left-panel">
-      <div class="panel-top">
-        <div class="panel-title">
-          <span id="libraryTitle">🔥 កំពុងល្បី (100 រឿង)</span>
-          <button style="background: #2b6cb0; border: none; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: 600;" onclick="reloadCurrentCategory(true)">
-            <span id="refreshBtnText">🔄 Refresh</span>
-          </button>
-        </div>
-        <div class="panel-subtitle">
-          <span id="categoryDesc">Official Hongguo Rankings</span>
-          <span id="categoryStats" style="color: #68d391; font-weight: 600;">100 រឿង</span>
-        </div>
-
-        <!-- Category Selector Tabs -->
-        <div class="category-tabs-wrap">
-          <div class="category-tabs" id="categoryTabs">
-            <button class="cat-tab active" data-cat="trending" onclick="switchCategory('trending')">🔥 កំពុងល្បី (100)</button>
-            <button class="cat-tab" data-cat="sad" onclick="switchCategory('sad')">😭 កម្សត់ / ទុក្ខ</button>
-            <button class="cat-tab" data-cat="sweet" onclick="switchCategory('sweet')">💖 Sweet / ផ្អែម</button>
-            <button class="cat-tab" data-cat="romance" onclick="switchCategory('romance')">🌹 រ៉ូមែនទិក</button>
-            <button class="cat-tab" data-cat="ceo" onclick="switchCategory('ceo')">👑 CEO / អភិជន</button>
-            <button class="cat-tab" data-cat="comeback" onclick="switchCategory('comeback')">⚔️ សងសឹក</button>
-            <button class="cat-tab" data-cat="costume" onclick="switchCategory('costume')">⏳ បុរាណ / ឆ្លងភព</button>
-            <button class="cat-tab" data-cat="comedy" onclick="switchCategory('comedy')">🎭 កំប្លែង</button>
-            <button class="cat-tab" data-cat="family" onclick="switchCategory('family')">👨‍👩‍👧 គ្រួសារ</button>
-            <button class="cat-tab" data-cat="suspense" onclick="switchCategory('suspense')">🔍 អាថ៌កំបាំង</button>
-          </div>
-        </div>
-
-        <input type="text" id="librarySearch" class="library-search-input" placeholder="🔍 ស្វែងរកក្នុងប្រភេទនេះ..." oninput="filterLibrary()">
-      </div>
-      
-      <div class="library-scroll" id="libraryList">
-        <!-- Rendered by JS -->
-      </div>
-    </div>
-
-    <!-- Main Panel -->
-    <div class="main-panel">
-
-      <!-- Drama Details -->
-      <div class="drama-banner" id="mainBanner">
-        <img id="bannerCover" class="banner-cover" src="https://p6-novel.byteimg.com/novel-pic/973dad4339e00fa9a5d1bf71e6431245~tplv-shrink:640:0.image">
-        <div class="banner-details">
-          <div>
-            <h1 id="bannerTitle" class="banner-title">万妖图录传第十四季</h1>
-            <p id="bannerKhmer" class="banner-subtitle">រឿងភាគខ្លីពិសេស</p>
-            <div class="banner-meta">
-              <span id="bannerId">Series ID: 7702763145030290457</span>
-              <span>•</span>
-              <span id="bannerTotal">សរុប: 202 ភាគ</span>
-              <span>•</span>
-              <span style="color: #68d391; font-weight: bold;">កម្រិត 1080p Full HD</span>
-            </div>
-
-            <!-- Gemini AI Zone -->
-            <div id="geminiZone" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
-              <!-- Gemini Translate Title Button -->
-              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                <button id="btnGeminiTranslate" onclick="geminiTranslateTitle()"
-                  style="background: linear-gradient(135deg, #1a56db, #7c3aed); border: none; color: #fff;
-                  padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
-                  display: flex; align-items: center; gap: 5px; font-family: inherit;">
-                  🤖 Gemini បកប្រែចំណងជើង
-                </button>
-                <button id="btnGeminiSynopsis" onclick="geminiGetSynopsis()"
-                  style="background: linear-gradient(135deg, #065f46, #0d9488); border: none; color: #fff;
-                  padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
-                  display: flex; align-items: center; gap: 5px; font-family: inherit;">
-                  📖 AI ពន្យល់រឿង
-                </button>
-              </div>
-              <!-- Gemini Result Box -->
-              <div id="geminiResultBox" style="display:none; background: #0f1a2e; border: 1px solid #2d4a7a;
-                border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #90cdf4; line-height: 1.7;
-                max-height: 100px; overflow-y: auto; position: relative;">
-                <span id="geminiResultText"></span>
-                <button onclick="document.getElementById('geminiResultBox').style.display='none'"
-                  style="position:absolute; top:4px; right:6px; background:none; border:none;
-                  color:#718096; cursor:pointer; font-size:14px;">✕</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Save Location Quick Bar -->
-          <div class="save-path-bar">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span style="font-size: 13px; color: #94a3b8; font-weight: 600;">📁 ទីតាំងរក្សាទុក:</span>
-              <span id="bannerSavePathText" class="path-badge">D:\HDRG</span>
-            </div>
-            <div style="display: flex; gap: 8px; align-items: center;">
-              <button type="button" class="btn-mini-action" onclick="openFolderModal()">⚙️ រើសទីតាំងថ្មី (Change)</button>
-              <button type="button" class="btn-mini-action" onclick="openFolder()">📂 បើកមើល Folder</button>
-            </div>
-          </div>
-
-          <!-- The Giant Download Action Buttons & Turbo Speed Selector -->
-          <div class="download-bar">
-            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-              <button id="btnDownloadAll" class="btn-download-giant" onclick="downloadAllEpisodes()">
-                🚀 ទាញយកគ្រប់ភាគទាំងអស់
-              </button>
-              <button id="btnCancelMain" class="btn-stop-all" onclick="stopDownload()">
-                🛑 បោះបង់ (Cancel)
-              </button>
-              <button class="btn-test-ep" onclick="downloadSingleEpisode(2)">
-                ⚡ សាកល្បងភាគ ២
-              </button>
-            </div>
-
-            <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
-              <div class="speed-selector-box">
-                <span style="font-size: 12px; color: #94a3b8; font-weight: 600;">⚡ ល្បឿន:</span>
-                <div class="speed-pill-group">
-                  <button type="button" class="speed-pill" onclick="setSpeed(6, this)">6 Threads</button>
-                  <button type="button" class="speed-pill active" onclick="setSpeed(8, this)">🚀 8 Threads (ណែនាំ)</button>
-                  <button type="button" class="speed-pill turbo" onclick="setSpeed(12, this)">🔥 12 Threads (Extreme)</button>
-                </div>
-              </div>
-              <div style="font-size: 13px; color: #a0aec0; display: flex; align-items: center; gap: 6px;">
-                <input type="checkbox" id="autoMergeCheck" checked>
-                <label for="autoMergeCheck" style="cursor: pointer;">✨ ផ្គុំ Full Movie Auto</label>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Placeholder before any drama is selected -->
-      <div id="noDramaPlaceholder" style="display: none; background: var(--bg-card); border: 2px dashed #233347; border-radius: 12px; padding: 60px 30px; text-align: center; color: #a0aec0; margin-bottom: 24px;">
-        <div style="font-size: 48px; margin-bottom: 12px;">👈 🎬</div>
-        <div style="font-size: 18px; font-weight: bold; color: #fff; margin-bottom: 8px;">សូមជ្រើសរើសរឿងភាគពីបញ្ជីខាងឆ្វេង ឬស្វែងរកខាងលើ</div>
-        <div style="font-size: 13px; color: #718096;">ចុចលើរឿងណាមួយក្នុងប្រភេទ (🔥 កំពុងល្បី, 😭 កម្សត់, 💖 Sweet, 👑 CEO...) ដើម្បីផ្ទុកព័ត៌មាន និងទាញយក</div>
-      </div>
-
-      <!-- Live Progress Card (Visible when downloading) -->
-      <div id="progressCard" class="progress-card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #48bb78; box-shadow: 0 0 8px #48bb78;"></span>
-            <span id="liveStatusText" style="color: #68d391; font-weight: bold; font-size: 14px;">🔥 កំពុងចាប់ផ្ដើមដំណើរការទាញយក...</span>
-          </div>
-          <button onclick="stopDownload()" class="btn-cancel-download">
-            🛑 បោះបង់ (Cancel)
-          </button>
-        </div>
-
-        <div class="progress-bar-bg">
-          <div id="liveProgressBar" class="progress-bar-fill"></div>
-        </div>
-
-        <!-- Live Metrics Bar: Timer, Percent, Speed, ETA, Episode Count, Folder -->
-        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #cbd5e1; flex-wrap: wrap; gap: 8px; margin-top: 6px;">
-          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-            <span id="liveTimerText" style="color: #60a5fa; font-weight: 700; display: flex; align-items: center; gap: 4px; background: rgba(37,99,235,0.15); padding: 3px 8px; border-radius: 5px; border: 1px solid rgba(59,130,246,0.3);">
-              ⏱️ <span>00:00</span>
-            </span>
-            <span id="liveSpeedText" style="color: #f6ad55; font-weight: 700; background: rgba(221,107,32,0.15); padding: 3px 8px; border-radius: 5px; border: 1px solid rgba(246,173,85,0.3);">
-              ⚡ 8 Threads Turbo
-            </span>
-            <span id="liveEtaText" style="color: #cbd5e1; font-weight: 600; background: rgba(148,163,184,0.1); padding: 3px 8px; border-radius: 5px; border: 1px solid rgba(148,163,184,0.2);">
-              ⏳ នៅសល់: ~-- វិនាទី
-            </span>
-            <span id="liveEpCountText" style="color: #9ae6b4; font-weight: 600;">
-              📦 0 ភាគ
-            </span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <span id="livePercentText" style="color: #fff; font-weight: 700; font-size: 16px;">0%</span>
-            <button onclick="openFolder()" id="progressOpenFolderBtn" style="background: rgba(49, 130, 206, 0.2); border: 1px solid #3182ce; color: #90cdf4; padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: 0.2s;">📂 បើកមើល Folder</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Quick User Guide -->
-      <div class="guide-box">
-        💡 <b>របៀបចុចទាញយកងាយៗ (Quick Guide):</b><br>
-        👉 <b>ជម្រើសទី ១ (ទាញយកទាំងអស់ Auto):</b> ចុចលើប៊ូតុងបៃតងធំខាងលើ <b>"🚀 ទាញយកគ្រប់ភាគទាំងអស់"</b><br>
-        👉 <b>ជម្រើសទី ២ (ទាញយកតែ ១ ភាគដែលចង់បាន):</b> ចុចផ្ទាល់លើប្រអប់ភាគខាងក្រោម (ឧទាហរណ៍ ចុចលើ <b>EP02</b> ឬ <b>EP03</b>...) នោះប្រព័ន្ធនឹងចាប់ផ្ដើមទាញយកភាគនោះភ្លាមៗតែម្ដង!
-      </div>
-
-      <!-- Episodes Section -->
-      <div class="episodes-section" id="episodesSection">
-        <div class="ep-header">
-          <div>
-            <div class="ep-title">📋 បញ្ជីភាគរឿង (ចុចលើភាគណា ទាញយកភាគនោះភ្លាមៗ)</div>
-            <div id="epStats" style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">បានទាញយក: 2 ភាគ (ភាគ 1, 2 រួចរាល់) | នៅសល់: 78 ភាគ</div>
-          </div>
-          <div class="ep-tools">
-            <button class="btn-ep-tool" onclick="selectAllEps(true)">☑ ជ្រើសទាំងអស់</button>
-            <button class="btn-ep-tool" onclick="selectAllEps(false)">☐ លុបការជ្រើស</button>
-          </div>
-        </div>
-
-        <div class="episodes-grid" id="episodesGrid">
-          <!-- Rendered by JS -->
-        </div>
-      </div>
-
-    </div>
-  </div>
-
-  <script>
-    let currentDrama = null;
-    let episodeStates = {}; // epNum -> 'done' | 'downloading' | 'pending' | 'unselected'
-    let isDownloading = false;
-    let currentCategory = 'trending';
-    let categoryDramasMap = {}; // cat -> dramas array
-    let allCurrentDramas = [];
-    let refreshSecondsLeft = 600;
-
-    const CAT_INFO = {
-      trending: { title: '🔥 កំពុងល្បី (100 រឿង)', desc: 'Official Hongguo Rankings' },
-      sad: { title: '😭 កម្សត់ & ទុក្ខសោក (Melodrama)', desc: 'រឿងសម្រក់ទឹកភ្នែក ឈឺចាប់ 虐恋 苦情' },
-      sweet: { title: '💖 Sweet & ផ្អែមល្ហែម (Sweet Rom-com)', desc: 'រឿងផ្អែមល្ហែម ស្នេហាយកចិត្ត 甜宠 先婚后爱' },
-      romance: { title: '🌹 ស្នេហារ៉ូមែនទិក (Romance Drama)', desc: 'រឿងមនោសញ្ចេតនាជ្រាលជ្រៅ 爱情' },
-      ceo: { title: '👑 CEO & អភិជន (Billionaire Boss)', desc: 'លោកប្រធានផ្ដាច់ការ ត្រកូលអភិជន 总裁 豪门' },
-      comeback: { title: '⚔️ សងសឹក & វាយបក (Comeback Revenge)', desc: 'អ្នកក្រក្លាយជាស្ដេច វាយបកយកឈ្នះ 逆袭 战神' },
-      costume: { title: '⏳ ឆ្លងភព & បុរាណ (Historical / Time Travel)', desc: 'រឿងឆ្លងភព សម័យបុរាណ 古装 穿越 重生' },
-      comedy: { title: '🎭 កំប្លែង & សប្បាយ (Comedy & Fun)', desc: 'រឿងសើចសប្បាយ បន្ធូរអារម្មណ៍ 喜剧 轻松' },
-      family: { title: '👨‍👩‍👧 គ្រួសារ & ជីវិត (Family & Drama)', desc: 'រឿងទំនាស់គ្រួសារ សង្គមពិត 家庭 伦理' },
-      suspense: { title: '🔍 អាថ៌កំបាំង & ព្រឺព្រួច (Mystery & Suspense)', desc: 'រឿងស៊ើបអង្កេត អាថ៌កំបាំង 悬疑 惊悚' }
-    };
-
-    let page = 1;
-    let pageSize = 20;
-    let displayedCount = 0;
-    let currentVisibleDramas = [];
-    let categoryPageMap = {}; // cat -> current page index from server
-    let isLoadingMore = false;
-
-    function handleCoverError(img) {
-      img.onerror = null;
-      img.src = 'https://p6-novel.byteimg.com/novel-pic/dd47bf8f4357b931ef542a2f91478aed~tplv-shrink:640:0.image';
-    }
-
-    function selectDramaByIndex(idx) {
-      const d = currentVisibleDramas[idx];
-      if (!d) return;
-      loadDrama(d.id, d.title, d.cover, d.total || 80, d.titleKhmer || d.title);
-    }
-
-    async function switchCategory(cat) {
-      currentCategory = cat;
-      displayedCount = 0;
-      if (!categoryPageMap[cat]) categoryPageMap[cat] = 1;
-      document.querySelectorAll('.cat-tab').forEach(t => {
-        t.classList.toggle('active', t.getAttribute('data-cat') === cat);
-      });
-
-      const meta = CAT_INFO[cat] || { title: '🎬 DRAMA LIBRARY', desc: 'Hongguo Dramas' };
-      document.getElementById('libraryTitle').innerText = meta.title;
-      document.getElementById('categoryDesc').innerText = meta.desc;
-      document.getElementById('librarySearch').value = '';
-
-      await loadCategoryDramas(cat);
-    }
-
-    async function loadCategoryDramas(cat, force = false) {
-      const container = document.getElementById('libraryList');
-      if (categoryDramasMap[cat] && !force) {
-        allCurrentDramas = categoryDramasMap[cat];
-        displayedCount = Math.min(20, allCurrentDramas.length);
-        renderLibraryCards(allCurrentDramas);
-        return;
-      }
-
-      categoryPageMap[cat] = 1;
-      container.innerHTML = '<div style="color: #718096; padding: 30px; text-align: center;">⏳ កំពុងទាញយកទិន្នន័យ...</div>';
-      try {
-        const query = '/api/catalog?category=' + cat + '&page=1' + (force ? '&refresh=1' : '');
-        const res = await fetch(query);
-        const data = await res.json();
-        allCurrentDramas = data.dramas || [];
-        categoryDramasMap[cat] = allCurrentDramas;
-        displayedCount = Math.min(20, allCurrentDramas.length);
-        renderLibraryCards(allCurrentDramas);
-      } catch (err) {
-        container.innerHTML = '<div style="color: #e53e3e; padding: 20px; text-align: center;">បរាជ័យក្នុងការទាញយក: ' + err.message + '</div>';
-      }
-    }
-
-    async function reloadCurrentCategory(force = true) {
-      document.getElementById('refreshBtnText').innerText = 'កំពុងទាញ...';
-      categoryPageMap[currentCategory] = 1;
-      await loadCategoryDramas(currentCategory, force);
-      document.getElementById('refreshBtnText').innerText = '🔄 Refresh';
-    }
-
-    async function loadMoreDramas() {
-      if (isLoadingMore) return;
-
-      // 1. If we still have unrevealed dramas already stored in memory:
-      if (displayedCount < allCurrentDramas.length) {
-        displayedCount = Math.min(displayedCount + 20, allCurrentDramas.length);
-        renderLibraryCards(allCurrentDramas);
-        return;
-      }
-
-      // 2. If user reached the end of current list, fetch more from server endlessly!
-      isLoadingMore = true;
-      const btn = document.getElementById('btnLoadMoreDramas');
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<span>⏳ កំពុងទាញយករឿងថ្មីៗបន្ថែម...</span>';
-      }
-
-      try {
-        categoryPageMap[currentCategory] = (categoryPageMap[currentCategory] || 1) + 1;
-        const nextPage = categoryPageMap[currentCategory];
-        const res = await fetch('/api/catalog?category=' + currentCategory + '&page=' + nextPage);
-        const data = await res.json();
-        const newDramas = data.dramas || [];
-
-        if (newDramas.length > 0) {
-          const existingIds = new Set(allCurrentDramas.map(d => d.id));
-          const fresh = newDramas.filter(d => !existingIds.has(d.id));
-          if (fresh.length > 0) {
-            allCurrentDramas = allCurrentDramas.concat(fresh);
-            categoryDramasMap[currentCategory] = allCurrentDramas;
-            displayedCount = Math.min(displayedCount + 20, allCurrentDramas.length);
-          } else {
-            // If page had duplicate results, try one page further
-            categoryPageMap[currentCategory] = nextPage + 1;
-            const res2 = await fetch('/api/catalog?category=' + currentCategory + '&page=' + (nextPage + 1));
-            const data2 = await res2.json();
-            const fresh2 = (data2.dramas || []).filter(d => !existingIds.has(d.id));
-            if (fresh2.length > 0) {
-              allCurrentDramas = allCurrentDramas.concat(fresh2);
-              categoryDramasMap[currentCategory] = allCurrentDramas;
-              displayedCount = Math.min(displayedCount + 20, allCurrentDramas.length);
-            }
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load more:', err);
-      } finally {
-        isLoadingMore = false;
-        renderLibraryCards(allCurrentDramas);
-      }
-    }
-
-    function renderLibraryCards(dramas) {
-      const container = document.getElementById('libraryList');
-      if (!dramas || dramas.length === 0) {
-        container.innerHTML = '<div style="color: #718096; padding: 30px; text-align: center;">មិនមានរឿងក្នុងប្រភេទនេះទេ</div>';
-        const statsEl = document.getElementById('categoryStats');
-        if (statsEl) statsEl.innerText = '0 រឿង';
-        return;
-      }
-
-      const q = document.getElementById('librarySearch').value.trim();
-      const limit = q ? dramas.length : (displayedCount || 20);
-      const visible = dramas.slice(0, limit);
-      currentVisibleDramas = visible;
-
-      const statsEl = document.getElementById('categoryStats');
-      if (statsEl) statsEl.innerText = visible.length + '/' + dramas.length + '+ រឿង';
-
-      const badgeMap = {
-        sad: ['badge-sad', '😭 កម្សត់'],
-        sweet: ['badge-sweet', '💖 Sweet'],
-        romance: ['badge-genre', '🌹 រ៉ូមែនទិក'],
-        ceo: ['badge-ceo', '👑 CEO'],
-        comeback: ['badge-comeback', '⚔️ វាយបក'],
-        costume: ['badge-costume', '⏳ បុរាណ'],
-        comedy: ['badge-comedy', '🎭 កំប្លែង'],
-        family: ['badge-family', '👨‍👩‍👧 គ្រួសារ'],
-        suspense: ['badge-genre', '🔍 អាថ៌កំបាំង']
-      };
-
-      let cardsHtml = visible.map((d, idx) => {
-        let badgeClass = 'badge-genre';
-        let badgeLabel = '#' + (idx + 1);
-
-        if (currentCategory === 'trending') {
-          if (d.rank === 1) { badgeClass = 'rank-gold'; badgeLabel = '🥇 #1'; }
-          else if (d.rank === 2) { badgeClass = 'rank-silver'; badgeLabel = '🥈 #2'; }
-          else if (d.rank === 3) { badgeClass = 'rank-bronze'; badgeLabel = '🥉 #3'; }
-          else { badgeClass = 'rank-normal'; badgeLabel = '#' + (d.rank || (idx + 1)); }
-        } else if (badgeMap[currentCategory]) {
-          badgeClass = badgeMap[currentCategory][0];
-          badgeLabel = badgeMap[currentCategory][1];
-        }
-
-        const safeCover = d.cover || 'https://p6-novel.byteimg.com/novel-pic/dd47bf8f4357b931ef542a2f91478aed~tplv-shrink:640:0.image';
-        const totalEps = d.total || 80;
-
-        return '<div class="drama-card-mini" onclick="selectDramaByIndex(' + idx + ')">' +
-            '<div class="rank-badge ' + badgeClass + '">' + badgeLabel + '</div>' +
-            '<img src="' + safeCover + '" class="mini-cover" loading="lazy" onerror="handleCoverError(this)">' +
-            '<div class="mini-info">' +
-              '<div class="mini-title">' + d.title + '</div>' +
-              '<div class="mini-khmer">' + (d.titleKhmer || 'រឿងភាគខ្លីពិសេស') + '</div>' +
-              '<div class="mini-heat">' + (d.heat ? '🔥 ' + d.heat : 'Hongguo Official') + '</div>' +
-              '<div class="mini-tags">' +
-                (d.tags || []).slice(0, 2).map(t => '<span class="mini-tag">' + t + '</span>').join('') +
-                '<span class="mini-tag" style="background: rgba(56, 161, 105, 0.2); color: #9ae6b4;">' + totalEps + ' ភាគ</span>' +
-              '</div>' +
-            '</div>' +
-          '</div>';
-      }).join('');
-
-      // Continuous Endless "Load More" Button: Never runs out!
-      if (!q) {
-        const remainingInMemory = dramas.length - visible.length;
-        const btnText = remainingInMemory > 0
-          ? '➕ មើលរឿងបន្ថែម (នៅសល់ ' + remainingInMemory + ' រឿងក្នុងបញ្ជី)'
-          : '➕ ផ្ទុករឿងថ្មីៗបន្ថែមទៀត (ទាញយកបន្ត...)';
-
-        cardsHtml += '<div style="padding: 14px 10px; text-align: center;">' +
-            '<button id="btnLoadMoreDramas" onclick="loadMoreDramas()" style="width: 100%; background: linear-gradient(135deg, #1e3a8a, #2563eb); border: 1px solid #3b82f6; color: #fff; font-size: 13px; font-weight: bold; padding: 10px 16px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s; font-family: inherit;">' +
-              '<span>' + btnText + '</span>' +
-            '</button>' +
-          '</div>';
-      }
-
-      container.innerHTML = cardsHtml;
-    }
-
-    function filterLibrary() {
-      const q = document.getElementById('librarySearch').value.toLowerCase().trim();
-      if (!q) return renderLibraryCards(allCurrentDramas);
-      const filtered = allCurrentDramas.filter(d => 
-        d.title.toLowerCase().includes(q) || 
-        (d.titleKhmer && d.titleKhmer.toLowerCase().includes(q)) || 
-        (d.tags && d.tags.some(t => t.toLowerCase().includes(q)))
-      );
-      renderLibraryCards(filtered);
-    }
-
-    // Background Cache Refresh (Silent update every 10 mins without resetting user view)
-    setInterval(() => {
-      // Fetch fresh data in background without interrupting current UI
-      fetch('/api/catalog?category=' + currentCategory + '&refresh=1').then(r => r.json()).then(data => {
-        if (data && data.dramas) {
-          categoryDramasMap[currentCategory] = data.dramas;
-          allCurrentDramas = data.dramas;
-        }
-      }).catch(() => {});
-    }, 10 * 60 * 1000);
-
-    function renderEpisodesGrid() {
-      const grid = document.getElementById('episodesGrid');
-      let html = '';
-      for (let ep = 1; ep <= currentDrama.total; ep++) {
-        const state = episodeStates[ep] || 'pending';
-        let subText = '';
-        if (state === 'done') subText = '✓ រួចរាល់';
-        else if (state === 'downloading') subText = '⏳ កំពុងទាញ';
-        else if (state === 'pending') subText = 'ចុចទាញយក';
-        else subText = 'រំលង';
-
-        html += '<div id="pill_ep_' + ep + '" class="ep-pill ' + state + '" onclick="handlePillClick(' + ep + ')">' +
-            '<span>EP' + String(ep).padStart(2, '0') + '</span>' +
-            '<span class="ep-subtext">' + subText + '</span>' +
-          '</div>';
-      }
-      grid.innerHTML = html;
-      updateStats();
-    }
-
-    // Direct 1-Click on any episode pill!
-    function handlePillClick(ep) {
-      if (episodeStates[ep] === 'done') {
-        alert('ភាគទី ' + ep + ' នេះត្រូវបានទាញយករួចរាល់ហើយក្នុង Folder D:\\\\HDRG!');
-        openFolder();
-        return;
-      }
-      downloadSingleEpisode(ep);
-    }
-
-    function selectAllEps(select) {
-      for (let ep = 1; ep <= currentDrama.total; ep++) {
-        if (episodeStates[ep] !== 'done') {
-          episodeStates[ep] = select ? 'pending' : 'unselected';
-        }
-      }
-      renderEpisodesGrid();
-    }
-
-    function updateStats() {
-      let done = 0;
-      for (let ep = 1; ep <= currentDrama.total; ep++) {
-        if (episodeStates[ep] === 'done') done++;
-      }
-      document.getElementById('epStats').innerText = 'បានទាញយក: ' + done + ' ភាគ | នៅសល់: ' + (currentDrama.total - done) + ' ភាគ';
-    }
-
-    async function loadDrama(id, title, cover, total, titleKhmer) {
-      let totalEps = Number(total) || 0;
-      currentDrama = { seriesId: id, title, cover, total: totalEps || 80, titleKhmer };
-
-      // Reveal main panel sections
-      const placeholder = document.getElementById('noDramaPlaceholder');
-      if (placeholder) placeholder.style.display = 'none';
-      const banner = document.getElementById('mainBanner');
-      if (banner) banner.style.display = 'flex';
-      const epSection = document.getElementById('episodesSection');
-      if (epSection) epSection.style.display = 'block';
-
-      document.getElementById('bannerTitle').innerText = title;
-      document.getElementById('bannerKhmer').innerText = titleKhmer || title;
-      document.getElementById('bannerCover').src = cover;
-      document.getElementById('bannerId').innerText = 'Series ID: ' + id;
-      const validInitialTotal = totalEps || 80;
-      document.getElementById('bannerTotal').innerText = 'សរុប: ' + validInitialTotal + ' ភាគ';
-      document.getElementById('btnDownloadAll').innerText = '🚀 ទាញយកគ្រប់ភាគទាំងអស់ (ភាគ 1 ដល់ ' + validInitialTotal + ')';
-
-      // Auto-translate banner Khmer title with Gemini in background
-      autoGeminiTranslateTitle(title);
-
-      // Dynamically fetch exact episode count & details from server
-      try {
-        fetch('/api/scanned-episodes?seriesId=' + id).then(r => r.json()).then(data => {
-          if (data && data.total && data.total > 0 && data.total !== totalEps) {
-            totalEps = data.total;
-            currentDrama.total = totalEps;
-            document.getElementById('bannerTotal').innerText = 'សរុប: ' + totalEps + ' ភាគ';
-            document.getElementById('btnDownloadAll').innerText = '🚀 ទាញយកគ្រប់ភាគទាំងអស់ (ភាគ 1 ដល់ ' + totalEps + ')';
-            // Re-initialize episodes
-            episodeStates = {};
-            for (let i = 1; i <= totalEps; i++) episodeStates[i] = 'pending';
-            if (data.downloaded && data.downloaded.length > 0) {
-              data.downloaded.forEach(ep => { episodeStates[ep] = 'done'; });
-            }
-            renderEpisodesGrid();
-          } else if (data && data.downloaded && data.downloaded.length > 0) {
-            data.downloaded.forEach(ep => { episodeStates[ep] = 'done'; });
-            renderEpisodesGrid();
-          }
-        }).catch(() => {});
-      } catch (_) {}
-
-      episodeStates = {};
-      for (let i = 1; i <= currentDrama.total; i++) {
-        episodeStates[i] = 'pending';
-      }
-      renderEpisodesGrid();
-    }
-
-    let activeEventSource = null;
-    let downloadTimerInterval = null;
-    let downloadSecondsElapsed = 0;
-
-    function startDownloadTimer() {
-      stopDownloadTimer();
-      downloadSecondsElapsed = 0;
-      const el = document.getElementById('liveTimerText');
-      if (el) el.innerHTML = '⏱️ <span>00:00</span>';
-      downloadTimerInterval = setInterval(() => {
-        downloadSecondsElapsed++;
-        const mins = String(Math.floor(downloadSecondsElapsed / 60)).padStart(2, '0');
-        const secs = String(downloadSecondsElapsed % 60).padStart(2, '0');
-        if (el) el.innerHTML = '⏱️ <span>' + mins + ':' + secs + '</span>';
-      }, 1000);
-    }
-
-    function stopDownloadTimer() {
-      if (downloadTimerInterval) {
-        clearInterval(downloadTimerInterval);
-        downloadTimerInterval = null;
-      }
-    }
-
-    function formatTime(sec) {
-      const m = Math.floor(sec / 60);
-      const s = sec % 60;
-      if (m === 0) return s + ' វិនាទី';
-      return m + ' នាទី ' + s + ' វិនាទី';
-    }
-
-    let selectedWorkers = 8;
-    function setSpeed(workers, btn) {
-      selectedWorkers = Number(workers) || 8;
-      document.querySelectorAll('.speed-pill').forEach(b => b.classList.remove('active'));
-      if (btn) btn.classList.add('active');
-      const speedLabel = selectedWorkers >= 12 ? '🔥 12 Threads Extreme' : (selectedWorkers >= 8 ? '🚀 8 Threads Turbo' : '⚡ 6 Threads');
-      const el = document.getElementById('liveSpeedText');
-      if (el) el.innerText = speedLabel;
-    }
-
-    function connectSSE() {
-      if (activeEventSource) {
-        try { activeEventSource.close(); } catch (_) {}
-      }
-      activeEventSource = new EventSource('/api/progress');
-      activeEventSource.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.status === 'cancelled') {
-          stopDownloadTimer();
-          if (activeEventSource) {
-            try { activeEventSource.close(); } catch (_) {}
-            activeEventSource = null;
-          }
-          isDownloading = false;
-          document.getElementById('liveStatusText').innerText = '🛑 បានផ្អាក/បោះបង់ការទាញយក (ចំណាយពេល ' + formatTime(downloadSecondsElapsed) + ')';
-          const validTotal = currentDrama ? (Number(currentDrama.total) || 80) : 80;
-          document.getElementById('btnDownloadAll').innerText = '🚀 បន្តទាញយកគ្រប់ភាគ (ភាគ 1 ដល់ ' + validTotal + ')';
-          document.getElementById('btnDownloadAll').disabled = false;
-          for (let ep = 1; ep <= currentDrama.total; ep++) {
-            if (episodeStates[ep] === 'downloading') episodeStates[ep] = 'pending';
-          }
-          renderEpisodesGrid();
-          return;
-        }
-
-        if (data.type === 'episode') {
-          episodeStates[data.epNum] = data.status;
-          const pill = document.getElementById('pill_ep_' + data.epNum);
-          if (pill) {
-            pill.className = 'ep-pill ' + data.status;
-            if (data.status === 'downloading') pill.children[1].innerText = (data.percent || 20) + '%';
-            if (data.status === 'done') pill.children[1].innerText = '✓ រួចរាល់ (' + (data.size || '') + ')';
-          }
-          updateStats();
-        }
-        if (data.speed) {
-          const spd = document.getElementById('liveSpeedText');
-          if (spd) spd.innerText = '⚡ ' + data.speed;
-        }
-        if (data.eta !== undefined && data.eta !== null) {
-          const etaEl = document.getElementById('liveEtaText');
-          if (etaEl) etaEl.innerText = '⏳ នៅសល់: ~' + formatTime(data.eta);
-        }
-        if (data.completed !== undefined && data.total) {
-          const epCountEl = document.getElementById('liveEpCountText');
-          if (epCountEl) epCountEl.innerText = '📦 ' + data.completed + '/' + data.total + ' ភាគ';
-        }
-        if (data.type === 'global' || data.message) {
-          document.getElementById('liveStatusText').innerText = data.message || 'កំពុងដំណើរការ...';
-          if (data.progress !== undefined) {
-            document.getElementById('liveProgressBar').style.width = data.progress + '%';
-            document.getElementById('livePercentText').innerText = data.progress + '%';
-          }
-        }
-        if (data.status === 'done' || data.status === 'completed') {
-          stopDownloadTimer();
-          isDownloading = false;
-          const validTotal = currentDrama ? (Number(currentDrama.total) || 80) : 80;
-          document.getElementById('btnDownloadAll').innerText = '🚀 ទាញយកគ្រប់ភាគទាំងអស់ (ភាគ 1 ដល់ ' + validTotal + ')';
-          document.getElementById('btnDownloadAll').disabled = false;
-          document.getElementById('liveStatusText').innerText = '✅ បានទាញយកចប់គ្រប់ភាគដោយជោគជ័យ! (សរុប ' + formatTime(downloadSecondsElapsed) + ')';
-          document.getElementById('liveProgressBar').style.width = '100%';
-          document.getElementById('livePercentText').innerText = '100%';
-          if (activeEventSource) {
-            try { activeEventSource.close(); } catch (_) {}
-            activeEventSource = null;
-          }
-        }
-      };
-    }
-
-    function downloadAllEpisodes() {
-      if (!currentDrama) return alert('សូមជ្រើសរើសរឿងជាមុនសិន!');
-      const selectedEps = [];
-      for (let ep = 1; ep <= currentDrama.total; ep++) {
-        if (episodeStates[ep] !== 'done') selectedEps.push(ep);
-      }
-      if (selectedEps.length === 0) return alert('គ្រប់ភាគទាំងអស់ត្រូវបានទាញយករួចរាល់ហើយ!');
-
-      triggerDownload(selectedEps);
-    }
-
-    function downloadSingleEpisode(ep) {
-      if (!currentDrama) return alert('សូមជ្រើសរើសរឿងជាមុនសិន!');
-      episodeStates[ep] = 'downloading';
-      const pill = document.getElementById('pill_ep_' + ep);
-      if (pill) {
-        pill.className = 'ep-pill downloading';
-        if (pill.children[1]) pill.children[1].innerText = '⏳ កំពុងទាញ...';
-      }
-      triggerDownload([ep]);
-    }
-
-    function triggerDownload(eps) {
-      if (!currentDrama) return alert('សូមជ្រើសរើសរឿងជាមុនសិន!');
-      isDownloading = true;
-      document.getElementById('progressCard').style.display = 'block';
-
-      const validTotal = Number(currentDrama.total) || 80;
-      const labelText = eps.length === 1
-        ? '⏳ កំពុងទាញភាគ ' + eps[0] + '... (ចុច 🛑 បោះបង់)'
-        : '⏳ កំពុងទាញយក ' + eps.length + ' ភាគ (ភាគ 1 ដល់ ' + validTotal + ')...';
-      document.getElementById('btnDownloadAll').innerText = labelText;
-      document.getElementById('btnDownloadAll').disabled = true;
-
-      // Start live ticking timer
-      startDownloadTimer();
-
-      document.getElementById('liveStatusText').innerText = eps.length === 1
-        ? '🔥 កំពុងទាញយកភាគទី ' + eps[0] + '...'
-        : '🔥 កំពុងចាប់ផ្ដើមទាញយកចំនួន ' + eps.length + ' ភាគ (Turbo Multi-threading)...';
-
-      document.getElementById('liveEpCountText').innerText = eps.length === 1
-        ? '📦 ភាគទី ' + eps[0]
-        : '📦 0/' + eps.length + ' ភាគ';
-
-      document.getElementById('liveProgressBar').style.width = '5%';
-      document.getElementById('livePercentText').innerText = '5%';
-
-      connectSSE();
-
-      const autoMerge = document.getElementById('autoMergeCheck').checked;
-      fetch('/api/start-download', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ seriesId: currentDrama.seriesId, selectedEps: eps, autoMerge, workers: selectedWorkers })
-      });
-    }
-
-    async function stopDownload() {
-      stopDownloadTimer();
-      document.getElementById('liveStatusText').innerText = '⏳ កំពុងផ្អាក...';
-      if (activeEventSource) {
-        try { activeEventSource.close(); } catch (_) {}
-        activeEventSource = null;
-      }
-      isDownloading = false;
-      const validTotal = currentDrama ? (Number(currentDrama.total) || 80) : 80;
-      document.getElementById('btnDownloadAll').innerText = '🚀 បន្តទាញយកគ្រប់ភាគ (ភាគ 1 ដល់ ' + validTotal + ')';
-      document.getElementById('btnDownloadAll').disabled = false;
-
-      if (currentDrama) {
-        for (let ep = 1; ep <= currentDrama.total; ep++) {
-          if (episodeStates[ep] === 'downloading') {
-            episodeStates[ep] = 'pending';
-          }
-        }
-        renderEpisodesGrid();
-      }
-
-      await fetch('/api/stop-download', { method: 'POST' });
-      document.getElementById('liveStatusText').innerText = '🛑 បានបោះបង់/ផ្អាកការទាញយកដោយជោគជ័យ!';
-    }
-
-    async function openFolder() {
-      const btn = document.getElementById('openFolderBtn');
-      const origText = btn ? btn.innerText : '📂 បើក Folder វីដេអូ';
-      if (btn) btn.innerText = '📂 កំពុងបើក...';
-
-      const title = currentDrama ? currentDrama.title : '';
-      try {
-        await fetch('/api/open-folder', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: title })
-        });
-        if (btn) {
-          btn.innerText = '✅ បានបើក Folder!';
-          setTimeout(() => { if (btn) btn.innerText = origText; }, 2000);
-        }
-      } catch (err) {
-        if (btn) {
-          btn.innerText = '❌ បរាជ័យ';
-          setTimeout(() => { if (btn) btn.innerText = origText; }, 2000);
-        }
-      }
-    }
-
-    async function handleSearch() {
-      const input = document.getElementById('globalSearchInput').value.trim();
-      if (!input) return alert('សូមបញ្ចូលឈ្មោះរឿង ឬ Link!');
-      try {
-        const res = await fetch('/api/resolve', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ input })
-        });
-        const data = await res.json();
-        if (data.success) {
-          loadDrama(data.seriesId, data.title, data.cover, data.total, data.title);
-        } else {
-          alert('កំហុស: ' + (data.error || 'រកមិនឃើញរឿងនេះទេ'));
-        }
-      } catch (err) {
-        alert('កំហុស: ' + err.message);
-      }
-    }
-
-    async function pasteClipboard() {
-      try {
-        const text = await navigator.clipboard.readText();
-        document.getElementById('globalSearchInput').value = text;
-        handleSearch();
-      } catch (_) {
-        alert('សូមចុច Ctrl+V ដើម្បីបិទភ្ជាប់');
-      }
-    }
-
-    // Key Modal & Config Management
-    function openKeyModal() {
-      document.getElementById('keyModal').style.display = 'flex';
-      fetch('/api/config').then(r => r.json()).then(data => {
-        if (data.maskedKey) {
-          document.getElementById('geminiKeyInput').placeholder = 'Key បច្ចុប្បន្ន: ' + data.maskedKey;
-        }
-      }).catch(() => {});
-    }
-
-    function closeKeyModal() {
-      document.getElementById('keyModal').style.display = 'none';
-      document.getElementById('keyFeedback').innerText = '';
-    }
-
-    function toggleKeyVisibility() {
-      const input = document.getElementById('geminiKeyInput');
-      input.type = input.type === 'password' ? 'text' : 'password';
-    }
-
-    async function testKeyNow() {
-      const key = document.getElementById('geminiKeyInput').value.trim();
-      const fb = document.getElementById('keyFeedback');
-      fb.style.color = '#60a5fa';
-      fb.innerText = '⏳ កំពុងតេស្តសាកល្បង Key ជាមួយ Google Gemini...';
-      try {
-        const res = await fetch('/api/test-gemini', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiKey: key })
-        });
-        const data = await res.json();
-        if (data.success) {
-          fb.style.color = '#4ade80';
-          fb.innerText = '✅ ' + data.message;
-        } else {
-          fb.style.color = '#f87171';
-          fb.innerText = '❌ ' + (data.error || 'Key មិនត្រឹមត្រូវ');
-        }
-      } catch (err) {
-        fb.style.color = '#f87171';
-        fb.innerText = '❌ បរាជ័យក្នុងការតភ្ជាប់: ' + err.message;
-      }
-    }
-
-    async function saveKeyNow() {
-      const key = document.getElementById('geminiKeyInput').value.trim();
-      if (!key) return alert('សូមបញ្ចូល API Key!');
-      try {
-        const res = await fetch('/api/config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiKey: key })
-        });
-        const data = await res.json();
-        if (data.success) {
-          alert('✅ បានរក្សាទុក Gemini API Key ដោយជោគជ័យ (សមកាលកម្មទៅ D:\\HDRG និង D:\\EZARG)!');
-          closeKeyModal();
-          checkKeyStatus();
-        } else {
-          alert('កំហុស: ' + data.error);
-        }
-      } catch (err) {
-        alert('កំហុស: ' + err.message);
-      }
-    }
-
-    // ===== GEMINI AI FUNCTIONS =====
-    function showGeminiResult(text, isLoading = false) {
-      const box = document.getElementById('geminiResultBox');
-      const span = document.getElementById('geminiResultText');
-      box.style.display = 'block';
-      span.innerHTML = isLoading
-        ? '<span style="color:#a0aec0;">⏳ Gemini AI កំពុងគិត...</span>'
-        : text;
-    }
-
-    // Auto translate title with Gemini in background when user clicks any drama
-    async function autoGeminiTranslateTitle(title) {
-      if (!title) return;
-      try {
-        const res = await fetch('/api/gemini-translate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title })
-        });
-        const data = await res.json();
-        if (data && data.khmer && !data.error) {
-          const khmerElem = document.getElementById('bannerKhmer');
-          if (khmerElem) khmerElem.innerText = data.khmer;
-          if (currentDrama) currentDrama.titleKhmer = data.khmer;
-        }
-      } catch (_) {}
-    }
-
-    async function geminiTranslateTitle() {
-      const title = document.getElementById('bannerTitle').innerText;
-      if (!title) return;
-      const btn = document.getElementById('btnGeminiTranslate');
-      btn.disabled = true;
-      btn.innerText = '⏳ កំពុង...';
-      showGeminiResult('', true);
-      try {
-        const res = await fetch('/api/gemini-translate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title })
-        });
-        const data = await res.json();
-        if (data.error) {
-          showGeminiResult('<span style="color:#fc8181;">❌ ' + data.error + '</span>');
-        } else {
-          // Update the Khmer subtitle with Gemini result
-          document.getElementById('bannerKhmer').innerText = data.khmer;
-          if (currentDrama) currentDrama.titleKhmer = data.khmer;
-          showGeminiResult('✅ <b style="color:#68d391;">ចំណងជើងខ្មែរ:</b> ' + data.khmer);
-        }
-      } catch (err) {
-        showGeminiResult('<span style="color:#fc8181;">❌ ' + err.message + '</span>');
-      }
-      btn.disabled = false;
-      btn.innerText = '🤖 Gemini បកប្រែចំណងជើង';
-    }
-
-    async function geminiGetSynopsis() {
-      const title = document.getElementById('bannerTitle').innerText;
-      if (!title) return;
-      const btn = document.getElementById('btnGeminiSynopsis');
-      btn.disabled = true;
-      btn.innerText = '⏳ កំពុង...';
-      showGeminiResult('', true);
-      try {
-        const res = await fetch('/api/gemini-synopsis', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title })
-        });
-        const data = await res.json();
-        if (data.error) {
-          showGeminiResult('<span style="color:#fc8181;">❌ ' + data.error + '</span>');
-        } else {
-          showGeminiResult('📖 <b style="color:#90cdf4;">ព្រឹត្តិការណ៍:</b> ' + data.synopsis);
-        }
-      } catch (err) {
-        showGeminiResult('<span style="color:#fc8181;">❌ ' + err.message + '</span>');
-      }
-      btn.disabled = false;
-      btn.innerText = '📖 AI ពន្យល់រឿង';
-    }
-
-    // ===== DOWNLOAD TOOL FUNCTION =====
-    function downloadTool() {
-      const btn = document.getElementById('dlToolBtn');
-      const icon = document.getElementById('dlToolIcon');
-      const label = document.getElementById('dlToolLabel');
-      const bar = document.getElementById('dlToolProgress');
-
-      // Start download immediately via hidden link
-      const a = document.createElement('a');
-      a.href = '/download/tool';
-      a.download = 'hongguo-downloader-setup.exe';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-
-      // Visual feedback: loading bar animation
-      icon.innerText = '📦';
-      label.innerText = 'កំពុង Save...';
-      bar.style.display = 'block';
-      bar.style.width = '0%';
-      btn.style.cursor = 'default';
-
-      let w = 0;
-      const iv = setInterval(() => {
-        w = Math.min(w + (Math.random() * 15), 90);
-        bar.style.width = w + '%';
-      }, 300);
-
-      setTimeout(() => {
-        clearInterval(iv);
-        bar.style.width = '100%';
-        icon.innerText = '✅';
-        label.innerText = 'ទាញយករួច!';
-        btn.style.borderColor = '#68d391';
-        setTimeout(() => {
-          icon.innerText = '⬇️';
-          label.innerText = 'ទាញយក Tool';
-          bar.style.display = 'none';
-          bar.style.width = '0%';
-          btn.style.cursor = 'pointer';
-        }, 3000);
-      }, 4000);
-    }
-
-    async function checkKeyStatus() {
-      try {
-        const res = await fetch('/api/config');
-        const data = await res.json();
-        const dot = document.getElementById('keyStatusDot');
-        if (dot) {
-          dot.innerText = data.hasKey ? '🟢' : '⚪';
-          dot.title = data.hasKey ? 'Gemini Key: ' + data.maskedKey : 'មិនទាន់កំណត់ Key';
-        }
-      } catch (_) {}
-    }
-
-    let currentDownloadDir = 'D:\\HDRG';
-
-    function loadDownloadDir() {
-      fetch('/api/download-dir').then(r => r.json()).then(data => {
-        if (data && data.path) {
-          updateDownloadDirUI(data.path);
-        }
-      }).catch(() => {});
-    }
-
-    function updateDownloadDirUI(p) {
-      currentDownloadDir = p;
-      const topLabel = document.getElementById('topFolderLabel');
-      if (topLabel) topLabel.innerText = p.length > 20 ? p.slice(0, 10) + '...' + p.slice(-10) : p;
-      const bannerPath = document.getElementById('bannerSavePathText');
-      if (bannerPath) bannerPath.innerText = p;
-      const input = document.getElementById('folderPathInput');
-      if (input) input.value = p;
-    }
-
-    function openFolderModal() {
-      const modal = document.getElementById('folderModal');
-      if (modal) {
-        modal.style.display = 'flex';
-        const input = document.getElementById('folderPathInput');
-        if (input) input.value = currentDownloadDir;
-        const box = document.getElementById('folderStatusBox');
-        if (box) box.style.display = 'none';
-      }
-    }
-
-    function closeFolderModal() {
-      const modal = document.getElementById('folderModal');
-      if (modal) modal.style.display = 'none';
-    }
-
-    function setPresetById(id) {
-      const presets = {
-        1: 'D:\\HDRG',
-        2: 'D:\\Videos',
-        3: 'C:\\Users\\ASUS\\Downloads\\HDRG',
-        4: 'C:\\Users\\ASUS\\Desktop\\HDRG'
-      };
-      const input = document.getElementById('folderPathInput');
-      if (input && presets[id]) input.value = presets[id];
-    }
-
-    async function browseFolderNative() {
-      const box = document.getElementById('folderStatusBox');
-      if (box) {
-        box.style.display = 'block';
-        box.style.background = 'rgba(49, 130, 206, 0.2)';
-        box.style.color = '#90cdf4';
-        box.style.border = '1px solid #3182ce';
-        box.innerText = '📂 កំពុងបើកផ្ទាំងជ្រើសរើស Folder លើ Windows... សូមមើលលើ Screen កុំព្យូទ័ររបស់អ្នក!';
-      }
-      try {
-        const res = await fetch('/api/browse-folder', { method: 'POST' });
-        const data = await res.json();
-        if (data.success && data.path) {
-          updateDownloadDirUI(data.path);
-          if (box) {
-            box.style.background = 'rgba(72, 187, 120, 0.2)';
-            box.style.color = '#9ae6b4';
-            box.style.border = '1px solid #48bb78';
-            box.innerText = '✅ បានជ្រើសរើស Folder៖ ' + data.path + ' (បានរក្សាទុកដោយជោគជ័យ)!';
-          }
-        } else if (data.cancelled) {
-          if (box) box.style.display = 'none';
-        } else if (data.error) {
-          if (box) {
-            box.style.background = 'rgba(229, 62, 62, 0.2)';
-            box.style.color = '#feb2b2';
-            box.style.border = '1px solid #e53e3e';
-            box.innerText = 'កំហុស: ' + data.error;
-          }
-        }
-      } catch (err) {
-        if (box) {
-          box.style.background = 'rgba(229, 62, 62, 0.2)';
-          box.style.color = '#feb2b2';
-          box.style.border = '1px solid #e53e3e';
-          box.innerText = 'កំហុស: ' + err.message;
-        }
-      }
-    }
-
-    async function saveFolderPath() {
-      const input = document.getElementById('folderPathInput');
-      const newPath = input ? input.value.trim() : '';
-      if (!newPath) return alert('សូមបញ្ចូលទីតាំង Folder!');
-      const box = document.getElementById('folderStatusBox');
-      try {
-        const res = await fetch('/api/download-dir', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: newPath })
-        });
-        const data = await res.json();
-        if (data.success && data.path) {
-          updateDownloadDirUI(data.path);
-          if (box) {
-            box.style.display = 'block';
-            box.style.background = 'rgba(72, 187, 120, 0.2)';
-            box.style.color = '#9ae6b4';
-            box.style.border = '1px solid #48bb78';
-            box.innerText = '✅ បានរក្សាទុកទីតាំង Folder ដោយជោគជ័យ៖ ' + data.path;
-          }
-          setTimeout(closeFolderModal, 1200);
-        } else {
-          alert('កំហុស៖ ' + (data.error || 'មិនអាចរក្សាទុកទីតាំងបាន'));
-        }
-      } catch (err) {
-        alert('កំហុស៖ ' + err.message);
-      }
-    }
-
-    window.onclick = function(event) {
-      const kModal = document.getElementById('keyModal');
-      if (event.target === kModal) closeKeyModal();
-      const fModal = document.getElementById('folderModal');
-      if (event.target === fModal) closeFolderModal();
-    };
-
-    window.onload = async () => {
-      checkKeyStatus();
-      loadDownloadDir();
-      try {
-        await loadCategoryDramas('trending');
-      } catch (e) {
-        console.error('Error loading trending:', e);
-      }
-      if (allCurrentDramas && allCurrentDramas.length > 0) {
-        const top1 = allCurrentDramas[0];
+  }
+  throw lastError;
+}
+
+function callGeminiModel(model, apiKey, prompt) {
+  const endpoint = new URL(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`);
+  const bodyStr = JSON.stringify({
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.3, maxOutputTokens: 512 },
+  });
+  return new Promise((resolve, reject) => {
+    const reqG = https.request({
+      hostname: endpoint.hostname,
+      path: endpoint.pathname + endpoint.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(bodyStr),
+      },
+      timeout: 12000,
+    }, (r) => {
+      let data = '';
+      r.on('data', c => data += c);
+      r.on('end', () => {
         try {
-          loadDrama(top1.id, top1.title, top1.cover, top1.total, top1.titleKhmer);
-        } catch (e) {
-          console.error('Error loading top drama:', e);
-        }
-      }
-    };
-  </script>
+          const json = JSON.parse(data);
+          if (json.error) return reject(new Error(json.error.message || 'Gemini API error'));
+          const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          resolve(text.trim());
+        } catch (e) { reject(e); }
+      });
+    });
+    reqG.on('timeout', () => { reqG.destroy(); reject(new Error(`Model ${model} timed out`)); });
+    reqG.on('error', reject);
+    reqG.write(bodyStr);
+    reqG.end();
+  });
+}
 
-  <!-- Modal: Video Save Location Picker -->
-  <div id="folderModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.75); z-index: 999; align-items: center; justify-content: center;">
-    <div style="background: #111827; border: 1.5px solid #38a169; border-radius: 14px; width: 560px; max-width: 92vw; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); display: flex; flex-direction: column; gap: 16px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f2937; padding-bottom: 12px;">
-        <h3 style="font-size: 17px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px;">
-          📁 ជ្រើសរើសទីតាំងរក្សាទុកវីដេអូ (Save Location)
-        </h3>
-        <button onclick="closeFolderModal()" style="background: none; border: none; color: #9ca3af; font-size: 20px; cursor: pointer;">✕</button>
-      </div>
+// ===== HTTP Request Body Helper =====
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => {
+      try { resolve(JSON.parse(body || '{}')); }
+      catch (e) { reject(e); }
+    });
+    req.on('error', reject);
+  });
+}
 
-      <div style="font-size: 13px; color: #cbd5e1; line-height: 1.6;">
-        ជ្រើសរើស Folder នៅលើកុំព្យូទ័ររបស់អ្នកដើម្បីរក្សាទុកវីដេអូភាគដែលបានទាញយក។ រាល់វីដេអូនឹងត្រូវបានបង្កើតជា Folder តាមឈ្មោះរឿងដោយស្វ័យប្រវត្តិ។
-      </div>
+function sendJson(res, obj, statusCode = 200) {
+  res.writeHead(statusCode, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+  });
+  res.end(JSON.stringify(obj));
+}
 
-      <div>
-        <label style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px; display: block;">ទីតាំងបច្ចុប្បន្ន (Current Path):</label>
-        <div style="display: flex; gap: 8px;">
-          <input type="text" id="folderPathInput" placeholder="ឧ. D:\HDRG ឬ E:\Movies" style="flex: 1; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px 14px; color: #63b3ed; font-size: 13px; outline: none; font-family: monospace;">
-          <button type="button" class="btn-browse-folder" onclick="browseFolderNative()">
-            📂 រើសលើ PC...
-          </button>
-        </div>
-      </div>
-
-      <!-- Quick Preset Paths -->
-      <div>
-        <div style="font-size: 12px; color: #94a3b8; font-weight: 600; margin-bottom: 6px;">⚡ ទីតាំងពេញនិយម (Quick Presets):</div>
-        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-          <button type="button" class="preset-pill" onclick="setPresetById(1)">📁 D:\HDRG (លំនាំដើម)</button>
-          <button type="button" class="preset-pill" onclick="setPresetById(2)">🎬 D:\Videos</button>
-          <button type="button" class="preset-pill" onclick="setPresetById(3)">⬇️ Downloads\HDRG</button>
-          <button type="button" class="preset-pill" onclick="setPresetById(4)">🖥️ Desktop\HDRG</button>
-        </div>
-      </div>
-
-      <div id="folderStatusBox" style="display: none; padding: 10px 14px; border-radius: 8px; font-size: 13px;"></div>
-
-      <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #1f2937; padding-top: 14px;">
-        <button onclick="openFolder()" style="background: #1e293b; border: 1px solid #475569; color: #e2e8f0; padding: 9px 16px; border-radius: 8px; font-size: 13px; cursor: pointer; font-weight: 600;">
-          📂 បើកមើល Folder នេះ
-        </button>
-        <div style="display: flex; gap: 8px;">
-          <button onclick="closeFolderModal()" style="background: transparent; border: 1px solid #374151; color: #9ca3af; padding: 9px 16px; border-radius: 8px; font-size: 13px; cursor: pointer;">បិទ</button>
-          <button onclick="saveFolderPath()" style="background: linear-gradient(135deg, #22543d, #2f855a); border: 1px solid #48bb78; color: #fff; padding: 9px 20px; border-radius: 8px; font-size: 13px; cursor: pointer; font-weight: 700;">💾 រក្សាទុក (Save)</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal API Key Settings -->
-  <div id="keyModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.75); z-index: 999; align-items: center; justify-content: center;">
-    <div style="background: #111827; border: 1.5px solid #2b6cb0; border-radius: 14px; width: 520px; max-width: 90vw; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); display: flex; flex-direction: column; gap: 16px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f2937; padding-bottom: 12px;">
-        <h3 style="font-size: 17px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px;">
-          🔑 កំណត់ Google Gemini API Key
-        </h3>
-        <button onclick="closeKeyModal()" style="background: none; border: none; color: #9ca3af; font-size: 20px; cursor: pointer;">✕</button>
-      </div>
-
-      <div style="font-size: 13px; color: #cbd5e1; line-height: 1.6;">
-        Gemini API Key ប្រើប្រាស់សម្រាប់ **បកប្រែរឿងភាគចិនមកជាភាសាខ្មែរយ៉ាងរលូនបែបភាពយន្ត** (មិនរឹងដូច Google Translate)។<br>
-        👉 <b>Free 100% (1,500 ភាគ/ថ្ងៃ)</b> អាចយក Key បាននៅ: <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color: #60a5fa; text-decoration: underline;">Google AI Studio</a>
-      </div>
-
-      <div>
-        <label style="font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px; display: block;">បញ្ចូល Gemini API Key របស់អ្នក (ឧ. AIzaSy...):</label>
-        <div style="display: flex; background: #0f172a; border: 1px solid #334155; border-radius: 8px; overflow: hidden;">
-          <input type="password" id="geminiKeyInput" placeholder="បិទភ្ជាប់ (Paste) Key នៅទីនេះ..." style="flex: 1; background: transparent; border: none; padding: 10px 14px; color: #fff; font-size: 13px; outline: none;">
-          <button onclick="toggleKeyVisibility()" style="background: transparent; border: none; color: #94a3b8; padding: 0 12px; cursor: pointer; font-size: 13px;">👁️</button>
-        </div>
-        <div id="keyFeedback" style="font-size: 12px; margin-top: 6px; min-height: 18px;"></div>
-      </div>
-
-      <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #1f2937; padding-top: 14px;">
-        <button onclick="testKeyNow()" style="background: #1e293b; border: 1px solid #475569; color: #e2e8f0; padding: 9px 16px; border-radius: 8px; font-size: 13px; cursor: pointer; font-weight: 600;">
-          ⚡ សាកល្បង Key (Test)
-        </button>
-        <div style="display: flex; gap: 8px;">
-          <button onclick="closeKeyModal()" style="background: transparent; border: 1px solid #374151; color: #9ca3af; padding: 9px 16px; border-radius: 8px; font-size: 13px; cursor: pointer;">បោះបង់</button>
-          <button onclick="saveKeyNow()" style="background: linear-gradient(135deg, #2563eb, #1d4ed8); border: none; color: #fff; padding: 9px 20px; border-radius: 8px; font-size: 13px; cursor: pointer; font-weight: 700;">💾 រក្សាទុក (Save)</button>
-        </div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`;
-
+// ===== HTTP Server =====
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -2249,8 +1418,14 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
   if (url.pathname === '/' || url.pathname === '/index.html') {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    return res.end(HTML_CONTENT);
+    try {
+      const html = fs.readFileSync(PUBLIC_HTML, 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      return res.end(html);
+    } catch (e) {
+      res.writeHead(500);
+      return res.end('UI missing: ' + e.message);
+    }
   }
 
   if (url.pathname === '/favicon.ico') {
@@ -2258,262 +1433,1025 @@ const server = http.createServer(async (req, res) => {
     return res.end('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🎬</text></svg>');
   }
 
-  // Config API: Get Key Status
+  // Cloud License Status & Verification API
+  if (url.pathname === '/api/license/status' && req.method === 'GET') {
+    const machineId = cloudLicense.getMachineHardwareId();
+    const cloudEnforced = cloudLicense.isCloudLicenseEnforced();
+    const summary = cloudEnforced ? cloudLicense.getCloudLicenseSummary(machineId) : null;
+    const remoteSettings = (summary && summary.remoteSettings) || {};
+    return sendJson(res, {
+      success: true,
+      isPackagedClient: IS_PACKAGED_CLIENT,
+      machineId,
+      cloudLicenseEnforced: cloudEnforced,
+      licensed: cloudEnforced ? Boolean(summary && summary.licensed) : true,
+      licenseInfo: summary
+        ? {
+            customerName: summary.customerName || '',
+            maskedKey: summary.maskedKey || '',
+            expiresAt: summary.expiresAt || null,
+            appScope: summary.appScope || 'all',
+          }
+        : null,
+      maintenanceBanner: (cloudEnforced && remoteSettings.maintenanceBanner) || '',
+      downloadUrl: (cloudEnforced && remoteSettings.downloadUrl) || '',
+      minAppVersion: (cloudEnforced && remoteSettings.minAppVersion) || '1.0.0',
+    });
+  }
+
+  if (url.pathname === '/api/license/verify' && req.method === 'POST') {
+    const body = await readJsonBody(req).catch(() => ({}));
+    if (body && body.action === 'clear') {
+      cloudLicense.clearStoredCloudLicenseState({ preserveKey: false });
+      return sendJson(res, { success: true, valid: false, cleared: true });
+    }
+
+    if (!cloudLicense.isCloudLicenseEnforced()) {
+      return sendJson(res, {
+        success: true,
+        valid: true,
+        cloudLicenseEnforced: false,
+        machineId: cloudLicense.getMachineHardwareId(),
+      });
+    }
+
+    const machineId = cloudLicense.getMachineHardwareId();
+    const providedCode = typeof body.code === 'string' ? body.code.trim() : '';
+    let appVersion = '1.0.0';
+    try {
+      appVersion = require('./package.json').version || '1.0.0';
+    } catch (_) {}
+
+    const result = await cloudLicense.verifyCloudLicenseKey({
+      licenseKey: providedCode,
+      machineId,
+      appVersion,
+    });
+
+    if (!result.valid) {
+      const statusCode =
+        result.reason === 'maintenance'
+          ? 423
+          : result.reason === 'network_required'
+            ? 503
+            : result.reason === 'missing_key'
+              ? 401
+              : 403;
+      return sendJson(
+        res,
+        {
+          success: false,
+          valid: false,
+          cloudLicenseEnforced: true,
+          reason: result.reason,
+          error: result.error || 'License Key មិនត្រឹមត្រូវទេ។',
+          maintenanceBanner: result.maintenanceBanner || '',
+          downloadUrl: result.downloadUrl || '',
+        },
+        statusCode
+      );
+    }
+
+    return sendJson(res, {
+      success: true,
+      valid: true,
+      cloudLicenseEnforced: true,
+      source: result.source,
+      machineId,
+      licenseInfo: {
+        customerName: result.customerName || '',
+        maskedKey: result.maskedKey || '',
+        expiresAt: result.expiresAt || null,
+        appScope: result.appScope || 'all',
+      },
+      maintenanceBanner: result.maintenanceBanner || '',
+      downloadUrl: result.downloadUrl || '',
+      minAppVersion: result.minAppVersion || '1.0.0',
+    });
+  }
+
+  // Enforce active signed Cloud License across all API routes when enforced
+  if (cloudLicense.isCloudLicenseEnforced()) {
+    const machineId = cloudLicense.getMachineHardwareId();
+    if (!cloudLicense.hasActiveLocalLease(machineId)) {
+      return sendJson(
+        res,
+        {
+          success: false,
+          error: 'សូមផ្ទៀងផ្ទាត់ License Key ជាមុនសិន មុននឹងប្រើប្រាស់មុខងារនេះ។',
+          reason: 'license_required',
+          cloudLicenseEnforced: true,
+        },
+        403
+      );
+    }
+  }
+
+  // Config API
   if (url.pathname === '/api/config' && req.method === 'GET') {
     const cfg = loadConfig();
     const key = cfg.GEMINI_API_KEY || '';
     const masked = key ? key.slice(0, 6) + '...' + key.slice(-4) : '';
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    return res.end(JSON.stringify({
-      hasKey: Boolean(key),
-      maskedKey: masked
-    }));
+    return sendJson(res, { hasKey: Boolean(key), maskedKey: masked });
   }
 
-  // Config API: Save Key
   if (url.pathname === '/api/config' && req.method === 'POST') {
-    let body = '';
-    req.on('data', chunk => body += chunk);
-    req.on('end', () => {
-      try {
-        const { apiKey } = JSON.parse(body || '{}');
-        const cfg = loadConfig();
-        cfg.GEMINI_API_KEY = (apiKey || '').trim();
-        saveConfig(cfg);
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ success: true, hasKey: Boolean(cfg.GEMINI_API_KEY) }));
-      } catch (err) {
-        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ success: false, error: err.message }));
-      }
-    });
-    return;
+    try {
+      const { apiKey } = await readJsonBody(req);
+      const cfg = loadConfig();
+      cfg.GEMINI_API_KEY = (apiKey || '').trim();
+      saveConfig(cfg);
+      return sendJson(res, { success: true, hasKey: Boolean(cfg.GEMINI_API_KEY) });
+    } catch (err) {
+      return sendJson(res, { success: false, error: err.message }, 500);
+    }
   }
 
-  // Test Gemini Key API
   if (url.pathname === '/api/test-gemini' && req.method === 'POST') {
-    let body = '';
-    req.on('data', chunk => body += chunk);
-    req.on('end', async () => {
-      try {
-        const { apiKey } = JSON.parse(body || '{}');
-        const key = (apiKey || loadConfig().GEMINI_API_KEY || '').trim();
-        if (!key) throw new Error('សូមបញ្ចូល API Key ជាមុនសិន!');
-        const text = await testGeminiKey(key);
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ success: true, message: `Key ត្រឹមត្រូវ និងដំណើរការល្អ! (តេស្តបកប្រែ: ${text})` }));
-      } catch (err) {
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ success: false, error: 'Key មិនត្រឹមត្រូវ ឬមានបញ្ហា: ' + err.message }));
-      }
+    try {
+      const { apiKey } = await readJsonBody(req);
+      const key = (apiKey || loadConfig().GEMINI_API_KEY || '').trim();
+      if (!key) throw new Error('សូមបញ្ចូល API Key ជាមុនសិន!');
+      const text = await testGeminiKey(key);
+      return sendJson(res, { success: true, message: `Key ដំណើរការល្អ! (តេស្ត: ${text})` });
+    } catch (err) {
+      return sendJson(res, { success: false, error: 'Key មិនត្រឹមត្រូវ: ' + err.message });
+    }
+  }
+
+  if (url.pathname === '/api/sources') {
+    const [ver, aria2Ver, nm3u8Ver, gpuEnc] = await Promise.all([
+      ytdlp.getVersion(),
+      ytdlp.getAria2Version(),
+      ytdlp.getNm3u8dlVersion(),
+      dl.detectGpuH264Encoder(),
+    ]);
+    return sendJson(res, {
+      success: true,
+      sources: sources.SOURCES,
+      ytdlp: { available: ytdlp.isAvailable(), version: ver },
+      aria2c: { available: ytdlp.isAria2Available(), version: aria2Ver, rpc: dl.getAria2RpcStatus() },
+      nm3u8dl: { available: ytdlp.isNm3u8dlAvailable(), version: nm3u8Ver },
+      gpu: { available: Boolean(gpuEnc), encoder: gpuEnc || null },
     });
-    return;
   }
 
-  // Categories list API
   if (url.pathname === '/api/categories') {
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    return res.end(JSON.stringify({ categories: CATEGORIES }));
+    const source = url.searchParams.get('source') || 'hongguo';
+    if (source === 'hongguo') {
+      return sendJson(res, { source, categories: CATEGORIES });
+    }
+    try {
+      const cats = await sources.getSourceCategories(source);
+      return sendJson(res, { source, categories: cats });
+    } catch (err) {
+      return sendJson(res, { source, categories: [{ id: '', name: '🔥 ពេញនិយម' }], error: err.message });
+    }
   }
 
-  // Multi-Category Catalog API
   if (url.pathname === '/api/catalog') {
-    const category = url.searchParams.get('category') || 'trending';
+    const source = url.searchParams.get('source') || 'hongguo';
+    const category = url.searchParams.get('category') || (source === 'hongguo' ? 'trending' : '');
     const force = url.searchParams.get('refresh') === '1';
     const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+    if (source !== 'hongguo') {
+      try {
+        const resCat = await sources.browseSourceCatalog(source, { genre: category === 'trending' ? '' : category, page }, getKhmerTitle);
+        return sendJson(res, {
+          source,
+          category,
+          page,
+          count: resCat.dramas.length,
+          hasMore: resCat.hasMore,
+          dramas: resCat.dramas,
+          categories: resCat.categories,
+          nextRefreshIn: 0,
+        });
+      } catch (err) {
+        return sendJson(res, {
+          source,
+          category,
+          page,
+          count: 0,
+          hasMore: false,
+          dramas: [],
+          error: err.message,
+        });
+      }
+    }
     const dramas = await fetchCategoryDramas(category, page, force);
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    return res.end(JSON.stringify({
+    return sendJson(res, {
+      source: 'hongguo',
       category,
       page,
       count: dramas.length,
       dramas,
-      nextRefreshIn: Math.max(0, Math.round((nextRefreshTimestamp - Date.now()) / 1000))
-    }));
+      nextRefreshIn: Math.max(0, Math.round((nextRefreshTimestamp - Date.now()) / 1000)),
+    });
   }
 
-  // Top 100 Trending API (compatibility)
   if (url.pathname === '/api/trending') {
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    return res.end(JSON.stringify({
+    return sendJson(res, {
       dramas: cachedTrendingDramas,
-      nextRefreshIn: Math.max(0, Math.round((nextRefreshTimestamp - Date.now()) / 1000))
-    }));
+      nextRefreshIn: Math.max(0, Math.round((nextRefreshTimestamp - Date.now()) / 1000)),
+    });
   }
 
-  // Force Refresh Category API
   if (url.pathname === '/api/refresh-trending' && req.method === 'POST') {
     await refreshTrendingDramas();
     categoryCache.clear();
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    return res.end(JSON.stringify({
-      success: true,
-      count: cachedTrendingDramas.length,
-      dramas: cachedTrendingDramas
-    }));
+    return sendJson(res, { success: true, count: cachedTrendingDramas.length, dramas: cachedTrendingDramas });
   }
 
-  // Scanned episodes API
+  // Scanned episodes API: validates file headers/size, cleans temp junk, reports broken 0-byte files!
   if (url.pathname === '/api/scanned-episodes') {
     const sid = url.searchParams.get('seriesId');
+    const force = url.searchParams.get('force') === '1';
     try {
-      const info = await fetchEpisodeListSafe(sid);
-      const cleanTitle = (info.series_title || 'Drama_' + sid).replace(/[\\/:*?"<>|]/g, '_');
+      const info = await fetchEpisodeListSafe(sid, force);
+      const cleanTitle = dl.sanitizeTitle(info.series_title, sid);
       const outputDir = path.join(getDownloadDir(), cleanTitle);
-      const downloaded = [];
-      if (fs.existsSync(outputDir)) {
-        const files = fs.readdirSync(outputDir);
-        files.forEach(f => {
-          const m = f.match(/_第(\d+)集\.mp4$/);
-          if (m) {
-            const ep = parseInt(m[1], 10);
-            const size = fs.statSync(path.join(outputDir, f)).size;
-            if (size > 500000) downloaded.push(ep);
-          }
-        });
-      }
       const actualTotal = Array.isArray(info.episodes) ? info.episodes.length : 0;
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({
+      const scan = dl.scanAndCleanDramaFolder(outputDir, actualTotal, cleanTitle);
+      const mergedMovies = dl.listMergedMovieFiles(outputDir, cleanTitle).map(({ path: _p, ...rest }) => rest);
+      const hasMerged = mergedMovies.length > 0;
+      const lockedEps = Array.isArray(info.episodes)
+        ? info.episodes.filter((e) => e.locked).map((e) => Number(e.vid_index))
+        : [];
+      return sendJson(res, {
+        success: true,
+        seriesId: String(info.series_id || sid),
+        source: info.source || sources.detectSourceFromId(sid),
         total: actualTotal,
+        freeCount: Math.max(0, actualTotal - lockedEps.length),
+        lockedEps,
         title: info.series_title,
-        downloaded
-      }));
-    } catch (_) {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ total: 0, downloaded: [] }));
+        titleKhmer: getKhmerTitle(info.series_title),
+        cover: info.cover || '',
+        webAccessible: info.web_accessible_episodes ?? null,
+        downloaded: scan.downloaded,
+        broken: scan.broken.map(b => b.ep),
+        cleanedTemp: scan.cleanedTempCount,
+        hasMerged,
+        mergedMovies,
+        outputDir,
+      });
+    } catch (err) {
+      return sendJson(res, { success: false, total: 0, downloaded: [], broken: [], error: err.message });
     }
   }
 
+  // Clean 0-byte / broken files on demand
+  if (url.pathname === '/api/clean-broken' && req.method === 'POST') {
+    try {
+      const { seriesId } = await readJsonBody(req);
+      const info = await fetchEpisodeListSafe(seriesId);
+      const cleanTitle = dl.sanitizeTitle(info.series_title, seriesId);
+      const outputDir = path.join(getDownloadDir(), cleanTitle);
+      const removed = dl.removeBrokenMp4Files(outputDir);
+      return sendJson(res, { success: true, removed });
+    } catch (err) {
+      return sendJson(res, { success: false, error: err.message });
+    }
+  }
+
+  // Live Progress SSE + Multi-Job Snapshot Endpoint
   if (url.pathname === '/api/progress') {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
+      'Connection': 'keep-alive',
     });
-    res.write('data: {"type":"init","message":"⚡ បានភ្ជាប់ប្រព័ន្ធទាញយកល្បឿនលឿន (Turbo Multi-threaded)"}\n\n');
-    const clientId = Date.now();
-    const newClient = { id: clientId, res };
-    progressClients.push(newClient);
-
+    res.write(`data: ${JSON.stringify({ type: 'init', snapshot: getPrimaryJobSnapshot(), jobs: getAllJobSnapshots(), summary: getJobsSummary() })}\n\n`);
+    const clientId = Date.now() + Math.random();
+    progressClients.push({ id: clientId, res });
+    const heartbeat = setInterval(() => {
+      try { res.write(': ping\n\n'); } catch (_) {}
+    }, 15000);
     req.on('close', () => {
+      clearInterval(heartbeat);
       progressClients = progressClients.filter(c => c.id !== clientId);
     });
     return;
   }
 
-  if (url.pathname === '/api/resolve' && req.method === 'POST') {
-    let body = '';
-    req.on('data', chunk => body += chunk);
-    req.on('end', async () => {
-      try {
-        const { input } = JSON.parse(body || '{}');
-        const resolved = await smartResolve(input);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          success: true,
-          seriesId: resolved.seriesId,
-          title: resolved.title,
-          cover: resolved.cover,
-          total: resolved.total
-        }));
-      } catch (err) {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: false, error: err.message }));
-      }
+  if (url.pathname === '/api/download-status' && req.method === 'GET') {
+    return sendJson(res, {
+      success: true,
+      snapshot: getPrimaryJobSnapshot(),
+      jobs: getAllJobSnapshots(),
+      summary: getJobsSummary(),
     });
-    return;
+  }
+
+  if (url.pathname === '/api/library' && req.method === 'GET') {
+    try {
+      const items = dl.scanDramaLibrary(getDownloadDir(), buildKnownMetaByFolder());
+      for (const item of items) {
+        if (!findActiveJob(item.seriesId, item.folder)) {
+          dl.syncEpisodeFileTimestamps(item.path);
+        }
+      }
+      return sendJson(res, {
+        success: true,
+        downloadDir: getDownloadDir(),
+        items,
+        jobs: getAllJobSnapshots(),
+        summary: getJobsSummary(),
+      });
+    } catch (err) {
+      return sendJson(res, { success: false, error: err.message }, 500);
+    }
+  }
+
+  if (url.pathname === '/api/library-episodes' && req.method === 'GET') {
+    try {
+      const folderParam = url.searchParams.get('folder');
+      const sid = url.searchParams.get('seriesId');
+      let targetDir = null;
+      let folderName = '';
+      if (folderParam) {
+        targetDir = dl.resolveSafeSubdir(getDownloadDir(), folderParam);
+        folderName = folderParam;
+      } else if (sid) {
+        const info = await fetchEpisodeListSafe(sid);
+        folderName = dl.sanitizeTitle(info.series_title, sid);
+        targetDir = dl.resolveSafeSubdir(getDownloadDir(), folderName);
+      }
+      if (!targetDir || !fs.existsSync(targetDir)) {
+        return sendJson(res, { success: false, error: 'រកមិនឃើញថតវីដេអូទេ' }, 404);
+      }
+      const metaHint = dl.readDramaMeta(targetDir);
+      if (!findActiveJob(sid || metaHint?.seriesId || '', path.basename(targetDir))) {
+        dl.organizeDramaFolder(targetDir, path.basename(targetDir), Number(metaHint?.total || 0));
+      }
+      const data = dl.listDramaEpisodeFiles(targetDir);
+      return sendJson(res, {
+        success: true,
+        folder: path.basename(targetDir),
+        path: targetDir,
+        ...data,
+        mergedMovies: (data.mergedMovies || []).map(({ path: _p, ...rest }) => rest),
+      });
+    } catch (err) {
+      return sendJson(res, { success: false, error: err.message }, 500);
+    }
+  }
+
+  if (url.pathname === '/api/delete-library' && req.method === 'POST') {
+    try {
+      const { folder, epNum } = await readJsonBody(req);
+      const targetDir = dl.resolveSafeSubdir(getDownloadDir(), folder);
+      if (!targetDir || !fs.existsSync(targetDir)) {
+        return sendJson(res, { success: false, error: 'រកមិនឃើញថតវីដេអូទេ' }, 404);
+      }
+      const active = findActiveJob('', path.basename(targetDir));
+      if (active) {
+        return sendJson(res, { success: false, error: 'មិនអាចលុបខណៈពេលកំពុងទាញយក ឬផ្គុំវីដេអូនេះបានទេ!' }, 409);
+      }
+      if (Number.isInteger(Number(epNum)) && Number(epNum) >= 1) {
+        const f = dl.findExistingEpisodeFile(targetDir, path.basename(targetDir), Number(epNum), 0);
+        if (f && fs.existsSync(f)) {
+          fs.unlinkSync(f);
+          const srt = f.replace(/\.mp4$/i, '.srt');
+          if (fs.existsSync(srt)) try { fs.unlinkSync(srt); } catch (_) {}
+        }
+        return sendJson(res, { success: true, deletedEp: Number(epNum) });
+      }
+      fs.rmSync(targetDir, { recursive: true, force: true, maxRetries: 4, retryDelay: 150 });
+      return sendJson(res, { success: true, deletedFolder: path.basename(targetDir) });
+    } catch (err) {
+      return sendJson(res, { success: false, error: err.message }, 500);
+    }
+  }
+
+  if (url.pathname === '/api/resolve' && req.method === 'POST') {
+    try {
+      const { input, source, cookiesFromBrowser } = await readJsonBody(req);
+      const resolved = await smartResolve(input, source || 'hongguo', cookiesFromBrowser || '');
+      if (resolved.isSocial) {
+        return sendJson(res, {
+          success: true,
+          isSocial: true,
+          socialInfo: resolved.socialInfo,
+        });
+      }
+      return sendJson(res, {
+        success: true,
+        seriesId: resolved.seriesId,
+        source: resolved.source || 'hongguo',
+        title: resolved.title,
+        titleKhmer: resolved.titleKhmer,
+        cover: resolved.cover,
+        total: resolved.total,
+        matches: resolved.matches || [],
+      });
+    } catch (err) {
+      return sendJson(res, { success: false, error: err.message });
+    }
+  }
+
+  if (url.pathname === '/api/ytdlp-probe' && req.method === 'POST') {
+    try {
+      const { url: targetUrl, cookiesFromBrowser } = await readJsonBody(req);
+      const socialInfo = await ytdlp.probeUrl(targetUrl, { cookiesFromBrowser: cookiesFromBrowser || '' });
+      return sendJson(res, { success: true, socialInfo });
+    } catch (err) {
+      return sendJson(res, { success: false, error: err.message });
+    }
+  }
+
+  if (url.pathname === '/api/ytdlp-download' && req.method === 'POST') {
+    try {
+      const {
+        url: targetUrl, title, cover, platform, qualityPreset,
+        cookiesFromBrowser, useAria2 = true, isPlaylist, selectedIndices, totalItems,
+      } = await readJsonBody(req);
+      if (!ytdlp.isSocialVideoUrl(targetUrl)) {
+        return sendJson(res, { success: false, error: 'សូមបញ្ចូល URL វីដេអូត្រឹមត្រូវ!' }, 400);
+      }
+
+      const platName = ytdlp.sanitizeSafeName(platform?.name || ytdlp.detectPlatform(targetUrl).name, 'Social');
+      const cleanTitle = ytdlp.sanitizeSafeName(title || `${platName}_${Date.now()}`, `${platName}_${Date.now()}`);
+      const folderName = `${platName} - ${cleanTitle}`.slice(0, 88);
+      const outputDir = path.join(getDownloadDir(), folderName);
+      const sid = `ytdlp:${Buffer.from(String(targetUrl)).toString('base64url').slice(0, 20)}`;
+
+      const existing = findActiveJob(sid, folderName);
+      if (existing) {
+        return sendJson(res, { success: false, error: 'វីដេអូនេះកំពុងទាញយករួចហើយ!' }, 409);
+      }
+
+      const countTotal = isPlaylist
+        ? (Array.isArray(selectedIndices) && selectedIndices.length ? selectedIndices.length : (Number(totalItems) || 1))
+        : 1;
+
+      const job = {
+        id: Date.now() * 1000 + Math.floor(Math.random() * 1000),
+        mode: 'ytdlp',
+        status: 'starting',
+        seriesId: sid,
+        selectedEps: 'all',
+        title: title || cleanTitle,
+        titleKhmer: '',
+        cover: String(cover || ''),
+        folder: folderName,
+        outputDir,
+        total: countTotal,
+        completed: 0,
+        failed: 0,
+        workers: 1,
+        qualityMode: qualityPreset || 'best',
+        autoMerge: false,
+        downloadedBytes: 0,
+        speedMb: 0,
+        speedText: '0.0 MB/s',
+        etaSec: 0,
+        progress: 2,
+        message: `🌐 កំពុងភ្ជាប់ទាញយកពី ${platName}...`,
+        startedAt: Date.now(),
+        finishedAt: null,
+        lastBroadcastAt: 0,
+        episodeStates: {},
+        logs: [],
+        failedList: [],
+        cancelled: false,
+        abortController: new AbortController(),
+        activeChildren: new Set(),
+      };
+      jobsMap.set(job.id, job);
+      trimFinishedJobs();
+      emitSnapshot(job, true);
+
+      (async () => {
+        const signal = job.abortController.signal;
+        try {
+          job.status = 'running';
+          if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+          dl.saveDramaMeta(outputDir, {
+            seriesId: sid,
+            title: job.title,
+            cover: job.cover,
+            source: 'ytdlp',
+            platform: platName,
+            isSocial: true,
+            total: countTotal,
+          });
+          pushJobLog(job, `🌐 ចាប់ផ្ដើមទាញពី ${platName} (${qualityPreset || 'best'})${useAria2 !== false && ytdlp.isAria2Available() ? ' • ⚡ aria2c x16' : ''}${cookiesFromBrowser ? ` • Cookie: ${cookiesFromBrowser}` : ''}`);
+          emitSnapshot(job, true);
+
+          const resDl = await ytdlp.downloadYtdlp({
+            url: targetUrl,
+            outputDir,
+            filePrefix: cleanTitle,
+            isPlaylist: Boolean(isPlaylist),
+            selectedIndices: Array.isArray(selectedIndices) ? selectedIndices : null,
+            qualityPreset: qualityPreset || 'best',
+            cookiesFromBrowser: cookiesFromBrowser || '',
+            useAria2: useAria2 !== false,
+            signal,
+            activeChildren: job.activeChildren,
+            onLog: (msg) => {
+              pushJobLog(job, msg);
+              emitSnapshot(job, false);
+            },
+            onProgress: (p) => {
+              if (p.bytesDelta > 0) job.downloadedBytes += p.bytesDelta;
+              job.total = p.totalItems || job.total;
+              job.completed = Math.max(0, (p.currentItem || 1) - 1);
+              const overall = p.totalItems > 0
+                ? Math.min(99, Math.round((((p.currentItem - 1) + (p.itemPct / 100)) / p.totalItems) * 98) + 1)
+                : Math.min(99, p.itemPct);
+              job.progress = Math.max(job.progress, overall);
+              job.speedText = p.speedText || job.speedText;
+              const spNum = parseFloat(String(p.speedText || '0'));
+              if (Number.isFinite(spNum) && String(p.speedText || '').includes('MB/s')) job.speedMb = spNum;
+              job.message = p.phase === 'transcoding'
+                ? '⚙️ កំពុងផ្គុំវីដេអូ និងសំឡេង (FFmpeg)...'
+                : `⬇️ កំពុងទាញ ${p.currentItem}/${job.total} (${p.itemPct}%) • ${job.speedText}`;
+              emitSnapshot(job, false);
+            },
+          });
+
+          if (job.cancelled || signal.aborted) return;
+          job.completed = resDl.count || job.total;
+          job.progress = 100;
+          job.speedMb = 0;
+          job.speedText = '0.0 MB/s';
+          job.status = resDl.partial ? 'partial' : 'done';
+          job.finishedAt = Date.now();
+          job.message = resDl.partial
+            ? `⚠️ ទាញបាន ${resDl.count} ឯកសារ (មានវីដេអូខ្លះមានបញ្ហា)`
+            : `✅ ទាញយករួចរាល់ពី ${platName} (${resDl.count} ឯកសារ)!`;
+          pushJobLog(job, job.message);
+          emitSnapshot(job, true);
+        } catch (err) {
+          if (job.cancelled || signal.aborted || err.message === 'CANCELLED') return;
+          job.status = 'error';
+          job.speedMb = 0;
+          job.speedText = '0.0 MB/s';
+          job.finishedAt = Date.now();
+          job.message = `❌ ${err.message}`;
+          pushJobLog(job, `❌ ${err.message}`);
+          emitSnapshot(job, true);
+        } finally {
+          trimFinishedJobs();
+        }
+      })();
+
+      return sendJson(res, {
+        success: true,
+        jobId: job.id,
+        jobs: getAllJobSnapshots(),
+        summary: getJobsSummary(),
+      });
+    } catch (err) {
+      return sendJson(res, { success: false, error: err.message }, 500);
+    }
   }
 
   if (url.pathname === '/api/start-download' && req.method === 'POST') {
-    let body = '';
-    req.on('data', chunk => body += chunk);
-    req.on('end', () => {
-      try {
-        const { seriesId, selectedEps, autoMerge, workers } = JSON.parse(body || '{}');
-        currentDownloadJob = { seriesId, selectedEps, autoMerge, workers, cancelled: false };
-        runBatchDownload(currentDownloadJob);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true }));
-      } catch (err) {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: false, error: err.message }));
+    try {
+      const {
+        seriesId, selectedEps, autoMerge, workers, qualityMode,
+        title, titleKhmer, cover, total,
+      } = await readJsonBody(req);
+      const isAllMode = selectedEps === 'all' || selectedEps == null;
+      if (!seriesId || (!isAllMode && (!Array.isArray(selectedEps) || selectedEps.length === 0))) {
+        return sendJson(res, { success: false, error: 'សូមជ្រើសរើសរឿង និងភាគជាមុនសិន!' }, 400);
       }
-    });
-    return;
+
+      // Only replace/guard if THIS SAME seriesId already has an active job (other dramas stay running!)
+      const existingSame = findActiveJob(seriesId);
+      if (existingSame) {
+        if (existingSame.mode === 'merge') {
+          return sendJson(res, { success: false, error: 'រឿងនេះកំពុងផ្គុំ Full Movie — សូមរង់ចាំបន្តិច!' }, 409);
+        }
+        cancelJob(existingSame, '🔄 ចាប់ផ្ដើមការងារទាញយកថ្មីសម្រាប់រឿងនេះ...');
+        await dl.sleep(200);
+      }
+
+      const metaHint = findDramaMetaBySeriesId(seriesId);
+      const finalTitle = String(title || metaHint.title || `Series ${seriesId}`);
+      const finalKhmer = String(titleKhmer || metaHint.titleKhmer || getKhmerTitle(finalTitle) || '');
+      const finalCover = String(cover || metaHint.cover || '');
+      const estTotal = isAllMode ? (Number(total || metaHint.total || 0)) : selectedEps.length;
+
+      const job = {
+        id: Date.now() * 1000 + Math.floor(Math.random() * 1000),
+        mode: 'download',
+        status: 'starting',
+        seriesId: String(seriesId),
+        selectedEps: isAllMode ? 'all' : [...selectedEps],
+        title: finalTitle,
+        titleKhmer: finalKhmer,
+        cover: finalCover,
+        folder: dl.sanitizeTitle(finalTitle, seriesId),
+        outputDir: '',
+        total: estTotal,
+        completed: 0,
+        failed: 0,
+        workers: Number(workers) || 8,
+        qualityMode: qualityMode === 'fast' ? 'fast' : '1080p',
+        autoMerge: Boolean(autoMerge),
+        downloadedBytes: 0,
+        speedMb: 0,
+        speedText: '0.0 MB/s',
+        etaSec: 0,
+        progress: 2,
+        message: '⏳ កំពុងរៀបចំប្រព័ន្ធទាញយក...',
+        startedAt: Date.now(),
+        finishedAt: null,
+        lastBroadcastAt: 0,
+        episodeStates: {},
+        logs: [],
+        failedList: [],
+        cancelled: false,
+        abortController: new AbortController(),
+        activeChildren: new Set(),
+      };
+      jobsMap.set(job.id, job);
+      trimFinishedJobs();
+      emitSnapshot(job, true);
+      runBatchDownload(job);
+      return sendJson(res, {
+        success: true,
+        jobId: job.id,
+        jobs: getAllJobSnapshots(),
+        summary: getJobsSummary(),
+      });
+    } catch (err) {
+      return sendJson(res, { success: false, error: err.message }, 500);
+    }
   }
 
   if (url.pathname === '/api/stop-download' && req.method === 'POST') {
-    if (currentDownloadJob) currentDownloadJob.cancelled = true;
+    const body = await readJsonBody(req).catch(() => ({}));
+    if (body && body.jobId) {
+      const target = jobsMap.get(Number(body.jobId));
+      if (target && ACTIVE_JOB_STATUSES.has(target.status)) {
+        cancelJob(target, '🛑 បានបញ្ឈប់ការទាញយកដោយជោគជ័យ!');
+      }
+    } else if (body && body.seriesId) {
+      const target = findActiveJob(body.seriesId);
+      if (target) cancelJob(target, '🛑 បានបញ្ឈប់ការទាញយកដោយជោគជ័យ!');
+    } else {
+      cancelAllActiveJobs('🛑 បានបោះបង់/ផ្អាកការទាញយកទាំងអស់!');
+    }
+    return sendJson(res, { success: true, jobs: getAllJobSnapshots(), summary: getJobsSummary() });
+  }
+
+  if (url.pathname === '/api/dismiss-job' && req.method === 'POST') {
+    const body = await readJsonBody(req).catch(() => ({}));
+    if (body && body.clearFinished) {
+      for (const [id, j] of jobsMap.entries()) {
+        if (!ACTIVE_JOB_STATUSES.has(j.status)) jobsMap.delete(id);
+      }
+    } else if (body && body.jobId) {
+      const j = jobsMap.get(Number(body.jobId));
+      if (j && !ACTIVE_JOB_STATUSES.has(j.status)) jobsMap.delete(Number(body.jobId));
+    }
+    emitSnapshot(null, true);
+    return sendJson(res, { success: true, jobs: getAllJobSnapshots(), summary: getJobsSummary() });
+  }
+
+  // Dedicated On-Demand Full / Sequential Movie Merger (accepts seriesId OR folder + optional selectedEps / fromEp..toEp)
+  if (url.pathname === '/api/merge-drama' && req.method === 'POST') {
     try {
-      exec('taskkill /F /IM curl.exe /T', () => {});
-      exec('taskkill /F /IM ffmpeg.exe /T', () => {});
-    } catch (_) {}
-    broadcastProgress({ type: 'global', status: 'cancelled', message: '🛑 បានផ្អាកការទាញយកដោយជោគជ័យ' });
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ success: true }));
+      const { seriesId, folder, selectedEps, fromEp, toEp, outputLabel } = await readJsonBody(req);
+      let sid = String(seriesId || '').trim();
+      let cleanTitle = '';
+      let displayTitle = '';
+      let titleKhmer = '';
+      let cover = '';
+      let outputDir = '';
+      let expectedTotal = 0;
+
+      if (folder) {
+        outputDir = dl.resolveSafeSubdir(getDownloadDir(), folder);
+        if (!outputDir || !fs.existsSync(outputDir)) {
+          return sendJson(res, { success: false, error: 'រកមិនឃើញថតវីដេអូសម្រាប់ផ្គុំទេ!' });
+        }
+        cleanTitle = path.basename(outputDir);
+        const preMeta = dl.readDramaMeta(outputDir);
+        expectedTotal = Number(preMeta?.total || 0);
+        dl.organizeDramaFolder(outputDir, cleanTitle, expectedTotal);
+        const lib = dl.listDramaEpisodeFiles(outputDir);
+        sid = String(lib.meta?.seriesId || sid || '');
+        displayTitle = String(lib.meta?.title || cleanTitle);
+        titleKhmer = String(lib.meta?.titleKhmer || getKhmerTitle(displayTitle) || '');
+        cover = String(lib.meta?.cover || '');
+      } else if (sid) {
+        const info = await fetchEpisodeListSafe(sid);
+        cleanTitle = dl.sanitizeTitle(info.series_title, sid);
+        displayTitle = info.series_title;
+        titleKhmer = getKhmerTitle(displayTitle);
+        cover = info.cover || '';
+        expectedTotal = Array.isArray(info.episodes) ? info.episodes.length : 0;
+        outputDir = path.join(getDownloadDir(), cleanTitle);
+        if (fs.existsSync(outputDir)) dl.organizeDramaFolder(outputDir, cleanTitle, expectedTotal);
+      } else {
+        return sendJson(res, { success: false, error: 'សូមបញ្ជាក់ seriesId ឬ folder!' }, 400);
+      }
+
+      const existingSame = findActiveJob(sid, cleanTitle);
+      if (existingSame) {
+        return sendJson(res, { success: false, error: 'រឿងនេះកំពុងដំណើរការ — សូមរង់ចាំបញ្ចប់សិន!' }, 409);
+      }
+
+      const libFiles = dl.listDramaEpisodeFiles(outputDir);
+      const allEntries = libFiles.episodes.map((e) => ({ epNum: e.epNum, file: path.join(outputDir, e.fileName) }));
+      let entries = allEntries;
+
+      if (Array.isArray(selectedEps) && selectedEps.length > 0) {
+        const wanted = new Set(selectedEps.map(Number).filter((n) => Number.isInteger(n) && n >= 1));
+        entries = allEntries.filter((e) => wanted.has(e.epNum)).sort((a, b) => a.epNum - b.epNum);
+      } else if (fromEp != null || toEp != null) {
+        const a = Math.max(1, Number(fromEp) || 1);
+        const b = Number(toEp) || Number.MAX_SAFE_INTEGER;
+        const lo = Math.min(a, b);
+        const hi = Math.max(a, b);
+        entries = allEntries.filter((e) => e.epNum >= lo && e.epNum <= hi).sort((a, b) => a.epNum - b.epNum);
+      }
+
+      if (entries.length < 2) {
+        return sendJson(res, { success: false, error: 'ត្រូវការយ៉ាងតិច ២ ភាគដែលបានទាញយករួចរាល់ដើម្បីផ្គុំ!' });
+      }
+
+      const firstEp = entries[0].epNum;
+      const lastEp = entries[entries.length - 1].epNum;
+      let computedLabel = '';
+      if (outputLabel && String(outputLabel).trim()) {
+        computedLabel = String(outputLabel).trim();
+      } else if (entries.length < allEntries.length) {
+        const padLen = Math.max(3, String(expectedTotal || allEntries[allEntries.length - 1].epNum || 100).length);
+        computedLabel = `EP${String(firstEp).padStart(padLen, '0')}-EP${String(lastEp).padStart(padLen, '0')}`;
+      }
+
+      const seqDesc = `EP${firstEp} → EP${lastEp}`;
+      const job = {
+        id: Date.now() * 1000 + Math.floor(Math.random() * 1000),
+        mode: 'merge',
+        status: 'merging',
+        seriesId: sid,
+        title: displayTitle,
+        titleKhmer,
+        cover,
+        folder: cleanTitle,
+        outputDir,
+        total: entries.length,
+        completed: entries.length,
+        failed: 0,
+        workers: 2,
+        qualityMode: '1080p',
+        downloadedBytes: 0,
+        speedMb: 0,
+        speedText: 'FFmpeg Merge',
+        etaSec: 0,
+        progress: 5,
+        message: `🎞️ កំពុងរៀបចំផ្គុំតាមលំដាប់ ${seqDesc} (${entries.length} ភាគ)...`,
+        startedAt: Date.now(),
+        finishedAt: null,
+        lastBroadcastAt: 0,
+        episodeStates: {},
+        logs: [],
+        failedList: [],
+        cancelled: false,
+        abortController: new AbortController(),
+        activeChildren: new Set(),
+      };
+      jobsMap.set(job.id, job);
+      trimFinishedJobs();
+      pushJobLog(job, job.message);
+      emitSnapshot(job, true);
+
+      (async () => {
+        try {
+          const result = await dl.mergeEpisodesToMovie(outputDir, cleanTitle, entries, {
+            outputLabel: computedLabel,
+            signal: job.abortController.signal,
+            activeChildren: job.activeChildren,
+            onProgress: (pct, msg) => {
+              job.progress = pct >= 100 ? 100 : Math.min(99, Math.max(8, Math.round(((pct - 88) / 12) * 90 + 10)));
+              job.message = msg;
+              if (msg) pushJobLog(job, msg);
+              emitSnapshot(job, false);
+            },
+          });
+          job.status = 'done';
+          job.progress = 100;
+          job.finishedAt = Date.now();
+          job.message = `🎬 ផ្គុំតាមលំដាប់រួចរាល់: ${result.fileName} (${result.sizeMb} MB)`;
+          pushJobLog(job, job.message);
+          emitSnapshot(job, true);
+        } catch (err) {
+          if (!job.cancelled) {
+            job.status = 'error';
+            job.finishedAt = Date.now();
+            job.message = '❌ ផ្គុំបរាជ័យ: ' + err.message;
+            pushJobLog(job, job.message);
+            emitSnapshot(job, true);
+          }
+        }
+      })();
+
+      return sendJson(res, {
+        success: true,
+        jobId: job.id,
+        count: entries.length,
+        firstEp,
+        lastEp,
+        outputLabel: computedLabel || 'Full Movie',
+        jobs: getAllJobSnapshots(),
+        summary: getJobsSummary(),
+      });
+    } catch (err) {
+      return sendJson(res, { success: false, error: err.message });
+    }
+  }
+
+  // Stream downloaded MP4 episode (or merged movie with ?full=1&mergedFile=...), supports folder OR seriesId!
+  if (url.pathname === '/api/video' && req.method === 'GET') {
+    const sid = url.searchParams.get('seriesId');
+    const folderParam = url.searchParams.get('folder');
+    const isFull = url.searchParams.get('full') === '1';
+    const mergedFile = url.searchParams.get('mergedFile') || '';
+    const ep = parseInt(url.searchParams.get('ep') || '1', 10);
+    try {
+      let filePath = null;
+      if (folderParam) {
+        const outputDir = dl.resolveSafeSubdir(getDownloadDir(), folderParam);
+        if (!outputDir || !fs.existsSync(outputDir)) {
+          res.writeHead(404);
+          return res.end('Video folder not found');
+        }
+        const safeName = path.basename(outputDir);
+        filePath = isFull
+          ? dl.findMergedMovieFile(outputDir, safeName, mergedFile)
+          : dl.findMediaFileForPlayback(outputDir, safeName, ep, 0);
+      } else {
+        const info = await fetchEpisodeListSafe(sid);
+        const cleanTitle = dl.sanitizeTitle(info.series_title, sid);
+        const outputDir = path.join(getDownloadDir(), cleanTitle);
+        filePath = isFull
+          ? dl.findMergedMovieFile(outputDir, cleanTitle, mergedFile)
+          : dl.findMediaFileForPlayback(outputDir, cleanTitle, ep, info.episodes.length);
+      }
+      if (!filePath || !dl.isPlayableMediaFile(filePath)) {
+        res.writeHead(404);
+        return res.end('Video not found or incomplete');
+      }
+      const ext = path.extname(filePath).toLowerCase();
+      const mimeType = ext === '.mp3' ? 'audio/mpeg'
+        : ext === '.m4a' ? 'audio/mp4'
+        : ext === '.webm' ? 'video/webm'
+        : ext === '.mkv' ? 'video/x-matroska'
+        : 'video/mp4';
+      const stat = fs.statSync(filePath);
+      const range = req.headers.range;
+      if (range) {
+        const [startStr, endStr] = range.replace(/bytes=/, '').split('-');
+        const start = parseInt(startStr, 10) || 0;
+        const end = endStr ? parseInt(endStr, 10) : stat.size - 1;
+        res.writeHead(206, {
+          'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': (end - start) + 1,
+          'Content-Type': mimeType,
+        });
+        fs.createReadStream(filePath, { start, end }).pipe(res);
+      } else {
+        res.writeHead(200, {
+          'Content-Length': stat.size,
+          'Content-Type': mimeType,
+          'Accept-Ranges': 'bytes',
+        });
+        fs.createReadStream(filePath).pipe(res);
+      }
+      return;
+    } catch (err) {
+      res.writeHead(500);
+      return res.end(err.message);
+    }
   }
 
   if (url.pathname === '/api/open-folder') {
-    let body = '';
-    req.on('data', c => body += c);
-    req.on('end', () => {
-      let targetPath = getDownloadDir();
-      try {
-        const { title } = JSON.parse(body || '{}');
-        if (title) {
-          const cleanTitle = title.replace(/[\\/:*?"<>|]/g, '_');
-          const dramaDir = path.join(targetPath, cleanTitle);
-          if (fs.existsSync(dramaDir)) {
-            targetPath = dramaDir;
-          }
-        }
-      } catch (_) {}
-
-      try {
-        if (!fs.existsSync(targetPath)) {
-          fs.mkdirSync(targetPath, { recursive: true });
-        }
-        const p = spawn('explorer.exe', [targetPath], { detached: true, stdio: 'ignore' });
-        p.unref();
-      } catch (err) {
-        try { exec(`start "" "${targetPath}"`); } catch (_) {}
+    let targetPath = getDownloadDir();
+    try {
+      const { title, folder } = await readJsonBody(req);
+      if (folder) {
+        const safeSub = dl.resolveSafeSubdir(targetPath, folder);
+        if (safeSub && fs.existsSync(safeSub)) targetPath = safeSub;
+      } else if (title) {
+        const cleanTitle = dl.sanitizeTitle(title);
+        const dramaDir = path.join(targetPath, cleanTitle);
+        if (fs.existsSync(dramaDir)) targetPath = dramaDir;
       }
-
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ success: true, path: targetPath }));
-    });
-    return;
+    } catch (_) {}
+    try {
+      if (!fs.existsSync(targetPath)) fs.mkdirSync(targetPath, { recursive: true });
+      const p = spawn('explorer.exe', [targetPath], { detached: true, stdio: 'ignore' });
+      p.unref();
+    } catch (_) {
+      try { exec(`start "" "${targetPath}"`); } catch (_) {}
+    }
+    return sendJson(res, { success: true, path: targetPath });
   }
 
-  // Get or Set Video Download Directory
   if (url.pathname === '/api/download-dir') {
     if (req.method === 'POST') {
-      let body = '';
-      req.on('data', c => body += c);
-      req.on('end', () => {
-        try {
-          const { path: newPath } = JSON.parse(body || '{}');
-          if (newPath && typeof newPath === 'string') {
-            const clean = path.normalize(newPath.trim());
-            if (!fs.existsSync(clean)) fs.mkdirSync(clean, { recursive: true });
-            saveConfig({ DOWNLOAD_DIR: clean });
-            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-            return res.end(JSON.stringify({ success: true, path: clean }));
-          }
-          throw new Error('ទីតាំងមិនត្រឹមត្រូវ');
-        } catch (e) {
-          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-          return res.end(JSON.stringify({ success: false, error: e.message }));
-        }
-      });
-      return;
+      try {
+        const { path: newPath } = await readJsonBody(req);
+        if (!newPath || typeof newPath !== 'string') throw new Error('ទីតាំងមិនត្រឹមត្រូវ');
+        const clean = path.normalize(newPath.trim());
+        if (!fs.existsSync(clean)) fs.mkdirSync(clean, { recursive: true });
+        saveConfig({ DOWNLOAD_DIR: clean });
+        return sendJson(res, { success: true, path: clean });
+      } catch (e) {
+        return sendJson(res, { success: false, error: e.message });
+      }
     }
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    return res.end(JSON.stringify({ success: true, path: getDownloadDir() }));
+    return sendJson(res, { success: true, path: getDownloadDir() });
   }
 
-  // Browse Folder Dialog using Native Windows FolderBrowserDialog
+  if (url.pathname === '/api/list-dirs' && req.method === 'GET') {
+    try {
+      const home = os.homedir();
+      const drives = [];
+      for (let code = 67; code <= 90; code++) {
+        const drv = `${String.fromCharCode(code)}:\\`;
+        try { if (fs.existsSync(drv)) drives.push(drv); } catch (_) {}
+      }
+      const rawShortcuts = [
+        { label: '⬇️ Downloads', path: path.join(home, 'Downloads') },
+        { label: '🖥️ Desktop', path: path.join(home, 'Desktop') },
+        { label: '📄 Documents', path: path.join(home, 'Documents') },
+        { label: '🎬 ថតបច្ចុប្បន្ន', path: getDownloadDir() },
+        { label: '📁 ថតលំនាំដើម', path: DEFAULT_DOWNLOAD_DIR },
+      ];
+      const seenShort = new Set();
+      const shortcuts = [];
+      for (const s of rawShortcuts) {
+        const p = path.normalize(s.path);
+        if (!seenShort.has(p.toLowerCase()) && fs.existsSync(p)) {
+          seenShort.add(p.toLowerCase());
+          shortcuts.push({ label: s.label, path: p });
+        }
+      }
+
+      let reqPath = (url.searchParams.get('path') || '').trim();
+      if (!reqPath || !fs.existsSync(reqPath)) {
+        reqPath = getDownloadDir();
+        if (!fs.existsSync(reqPath)) reqPath = home;
+      }
+      const current = path.normalize(reqPath);
+      const parsedRoot = path.parse(current).root;
+      const parent = current.toLowerCase() !== parsedRoot.toLowerCase() ? path.dirname(current) : null;
+
+      let entries = [];
+      try {
+        entries = fs.readdirSync(current, { withFileTypes: true });
+      } catch (_) {}
+
+      const folders = [];
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        if (entry.name.startsWith('.') || entry.name.startsWith('$') || entry.name === 'System Volume Information') continue;
+        folders.push({
+          name: entry.name,
+          path: path.join(current, entry.name),
+        });
+      }
+      folders.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+      return sendJson(res, {
+        success: true,
+        current,
+        parent,
+        drives,
+        shortcuts,
+        folders: folders.slice(0, 250),
+      });
+    } catch (e) {
+      return sendJson(res, { success: false, error: e.message }, 500);
+    }
+  }
+
+  if (url.pathname === '/api/create-folder' && req.method === 'POST') {
+    try {
+      const { parentPath, name } = await readJsonBody(req);
+      const cleanName = String(name || '').replace(/[\\/:*?"<>|]/g, '_').trim();
+      if (!parentPath || !cleanName || cleanName === '.' || cleanName === '..') {
+        throw new Error('ឈ្មោះថតមិនត្រឹមត្រូវ');
+      }
+      const target = path.join(path.normalize(parentPath), cleanName);
+      if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
+      return sendJson(res, { success: true, path: target });
+    } catch (e) {
+      return sendJson(res, { success: false, error: e.message }, 400);
+    }
+  }
+
   if (url.pathname === '/api/browse-folder' && req.method === 'POST') {
     try {
       const chosen = await promptFolderPicker(getDownloadDir());
@@ -2521,181 +2459,144 @@ const server = http.createServer(async (req, res) => {
         const clean = path.normalize(chosen.trim());
         if (!fs.existsSync(clean)) fs.mkdirSync(clean, { recursive: true });
         saveConfig({ DOWNLOAD_DIR: clean });
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ success: true, path: clean }));
+        return sendJson(res, { success: true, path: clean });
       }
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ success: false, cancelled: true }));
+      return sendJson(res, { success: false, cancelled: true });
     } catch (e) {
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      return res.end(JSON.stringify({ success: false, error: e.message }));
+      return sendJson(res, { success: false, error: e.message });
     }
   }
 
-  // Download Tool: serve setup.exe directly to browser
   if (url.pathname === '/download/tool') {
-    const exeDir = __dirname;
-    // Find the first .exe file in the HDRG folder
-    const exeFiles = fs.readdirSync(exeDir).filter(f => f.endsWith('.exe'));
+    if (IS_PACKAGED_CLIENT) {
+      res.writeHead(404);
+      return res.end('Not Found');
+    }
+    const exeFiles = fs.readdirSync(__dirname).filter(f => f.endsWith('.exe'));
     if (exeFiles.length === 0) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ error: 'មិនរកឃើញ setup.exe' }));
+      return sendJson(res, { error: 'មិនរកឃើញ setup.exe' }, 404);
     }
     const exeFile = exeFiles[0];
-    const exePath = path.join(exeDir, exeFile);
+    const exePath = path.join(__dirname, exeFile);
     const stat = fs.statSync(exePath);
-    const fileName = encodeURIComponent(exeFile);
     res.writeHead(200, {
       'Content-Type': 'application/octet-stream',
-      'Content-Disposition': `attachment; filename="${exeFile}"; filename*=UTF-8''${fileName}`,
+      'Content-Disposition': `attachment; filename="${exeFile}"; filename*=UTF-8''${encodeURIComponent(exeFile)}`,
       'Content-Length': stat.size,
-      'Cache-Control': 'no-cache'
+      'Cache-Control': 'no-cache',
     });
-    const readStream = fs.createReadStream(exePath);
-    readStream.on('error', (err) => {
-      console.error('Error streaming exe:', err.message);
-    });
-    return readStream.pipe(res);
+    return fs.createReadStream(exePath).pipe(res);
   }
 
-  // ===== GEMINI: Translate Drama Title Chinese → Khmer =====
   if (url.pathname === '/api/gemini-translate' && req.method === 'POST') {
-    let body = '';
-    req.on('data', c => body += c);
-    req.on('end', async () => {
-      try {
-        const { title } = JSON.parse(body || '{}');
-        if (!title) { res.writeHead(400); return res.end(JSON.stringify({ error: 'title required' })); }
-        const prompt = `You are a Khmer drama translator. Translate this Chinese drama title to natural Khmer language (ភាសាខ្មែរ). 
-Return ONLY the Khmer translation, no explanation, no Chinese characters, no romanization.
-Chinese title: "${title}"
-Khmer translation:`;
-        const khmer = await callGemini(prompt);
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ khmer }));
-      } catch (err) {
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ error: err.message }));
-      }
-    });
-    return;
+    try {
+      const { title } = await readJsonBody(req);
+      if (!title) return sendJson(res, { error: 'title required' }, 400);
+      const prompt = `You are a Khmer drama translator. Translate this Chinese drama title to natural Khmer language (ភាសាខ្មែរ). Return ONLY the Khmer translation, no explanation, no Chinese characters, no romanization.\nChinese title: "${title}"\nKhmer translation:`;
+      const khmer = await callGemini(prompt);
+      return sendJson(res, { khmer });
+    } catch (err) {
+      return sendJson(res, { error: err.message });
+    }
   }
 
-  // ===== GEMINI: Drama Synopsis in Khmer =====
   if (url.pathname === '/api/gemini-synopsis' && req.method === 'POST') {
-    let body = '';
-    req.on('data', c => body += c);
-    req.on('end', async () => {
-      try {
-        const { title } = JSON.parse(body || '{}');
-        if (!title) { res.writeHead(400); return res.end(JSON.stringify({ error: 'title required' })); }
-        const prompt = `You are a Khmer drama expert. Based on this Chinese drama title, write a short 2-3 sentence synopsis in natural Khmer language (ភាសាខ្មែរ).
-Make it sound like a real drama description. Return ONLY Khmer text.
-Drama title: "${title}"
-Khmer synopsis:`;
-        const synopsis = await callGemini(prompt);
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ synopsis }));
-      } catch (err) {
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ error: err.message }));
-      }
-    });
-    return;
+    try {
+      const { title } = await readJsonBody(req);
+      if (!title) return sendJson(res, { error: 'title required' }, 400);
+      const prompt = `You are a Khmer drama expert. Based on this Chinese drama title, write a short 2-3 sentence synopsis in natural Khmer language (ភាសាខ្មែរ). Return ONLY Khmer text.\nDrama title: "${title}"\nKhmer synopsis:`;
+      const synopsis = await callGemini(prompt);
+      return sendJson(res, { synopsis });
+    } catch (err) {
+      return sendJson(res, { error: err.message });
+    }
   }
 
   res.writeHead(404);
   res.end('Not Found');
 });
 
-// ===== GEMINI API HELPER (HTTPS call) =====
-const https = require('https');
-const GEMINI_MODELS = [
-  'gemini-flash-lite-latest',
-  'gemini-flash-latest',
-  'gemini-3.5-flash-lite',
-  'gemini-3.8-flash'
-];
-
-async function testGeminiKey(apiKey) {
-  if (!apiKey) throw new Error('សូមបញ្ចូល API Key!');
-  let lastError = null;
-  for (const model of GEMINI_MODELS) {
-    try {
-      return await callGeminiModel(model, apiKey, "Translate '你好' to Khmer in 1 word.");
-    } catch (err) {
-      lastError = err;
-      const m = err.message || '';
-      if (m.includes('API_KEY_INVALID') || m.includes('API key not valid')) {
-        throw err;
+function runBackgroundWarmup() {
+  if (!cloudLicense.isCloudLicenseEnforced() || cloudLicense.hasActiveLocalLease()) {
+    startCatalogWarmup();
+  }
+  dl.ensureAria2Daemon().then((st) => {
+    console.log(`[Warmup] aria2c RPC daemon ready on 127.0.0.1:${st.port}`);
+  }).catch(() => {});
+  dl.detectGpuH264Encoder().then((enc) => {
+    if (enc) console.log(`[Warmup] GPU encoder ready: ${enc}`);
+  }).catch(() => {});
+  (async () => {
+    for (let i = 0; i < 4; i++) {
+      try {
+        await getPlaybackDevice(appRequestJson);
+        console.log('[Warmup] Playback device registered and cached.');
+        break;
+      } catch (_) {
+        await dl.sleep(10500);
       }
     }
-  }
-  throw lastError;
+  })();
 }
 
-async function callGemini(prompt) {
-  const cfg = loadConfig();
-  const apiKey = cfg.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('មិនទាន់ដាក់ Gemini API Key — ចុច 🔑 Gemini Key ក្នុង topbar');
-
-  let lastError = null;
-  for (const model of GEMINI_MODELS) {
-    try {
-      const result = await callGeminiModel(model, apiKey, prompt);
-      return result;
-    } catch (err) {
-      lastError = err;
-      const m = err.message || '';
-      if (m.includes('API_KEY_INVALID') || m.includes('API key not valid')) {
-        throw err;
-      }
-      console.warn(`[Gemini Fallback] Model ${model} failed: ${m.slice(0, 80)}. Trying next model...`);
-    }
-  }
-  throw lastError;
-}
-
-function callGeminiModel(model, apiKey, prompt) {
-  const endpoint = new URL(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`);
-  const bodyStr = JSON.stringify({
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.3, maxOutputTokens: 512 }
-  });
-
+function startServer({ port = PORT, host = '127.0.0.1', warmUp = true } = {}) {
   return new Promise((resolve, reject) => {
-    const options = {
-      hostname: endpoint.hostname,
-      path: endpoint.pathname + endpoint.search,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(bodyStr)
-      },
-      timeout: 10000
-    };
-    const reqG = https.request(options, (r) => {
-      let data = '';
-      r.on('data', c => data += c);
-      r.on('end', () => {
-        try {
-          const json = JSON.parse(data);
-          if (json.error) return reject(new Error(json.error.message || 'Gemini API error'));
-          const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          resolve(text.trim());
-        } catch (e) { reject(e); }
-      });
+    if (server.listening) {
+      const addr = server.address();
+      return resolve({ server, port: addr && typeof addr === 'object' ? addr.port : port });
+    }
+    const onError = (err) => reject(err);
+    server.once('error', onError);
+    server.listen(port, host, () => {
+      server.removeListener('error', onError);
+      server.requestTimeout = 0;
+      const addr = server.address();
+      const actualPort = addr && typeof addr === 'object' ? addr.port : port;
+      console.log(`EZA PRO Downloader running at: http://${host === '0.0.0.0' ? 'localhost' : host}:${actualPort}`);
+      if (warmUp) runBackgroundWarmup();
+      resolve({ server, port: actualPort });
     });
-    reqG.on('timeout', () => {
-      reqG.destroy();
-      reject(new Error(`Model ${model} request timed out after 10s`));
-    });
-    reqG.on('error', reject);
-    reqG.write(bodyStr);
-    reqG.end();
   });
 }
 
-server.listen(PORT, () => {
-  console.log(`HDRG Pro Plus Downloader running at: http://localhost:${PORT}`);
-});
+function stopServer() {
+  stopCatalogWarmup();
+  try {
+    cancelAllActiveJobs('🛑 កម្មវិធីកំពុងបិទ');
+  } catch (_) {}
+  try {
+    dl.shutdownAria2Daemon();
+  } catch (_) {}
+  try {
+    for (const c of progressClients) {
+      try { c.res.end(); } catch (_) {}
+    }
+    progressClients = [];
+  } catch (_) {}
+  try {
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+  } catch (_) {}
+  try {
+    if (server.listening) server.close();
+  } catch (_) {}
+}
+
+if (require.main === module) {
+  startServer({ port: PORT, host: '0.0.0.0', warmUp: true });
+  const exitNow = () => {
+    stopServer();
+    process.exit(0);
+  };
+  process.on('SIGINT', exitNow);
+  process.on('SIGTERM', exitNow);
+}
+
+module.exports = {
+  server,
+  startServer,
+  stopServer,
+  setFolderPickerHandler,
+  loadConfig,
+  saveConfig,
+  getDownloadDir,
+};

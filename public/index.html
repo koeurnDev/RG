@@ -1,0 +1,3748 @@
+<!DOCTYPE html>
+<html lang="km">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EZA PRO</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600&family=Kantumruy+Pro:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --card: #121826;
+      --soft: #1a2234;
+      --soft-hover: #222c42;
+      --border: rgba(255, 255, 255, 0.08);
+      --text: #f3f6fb;
+      --muted: #93a0b8;
+      --dim: #647189;
+      --green: #10b981;
+      --blue: #38bdf8;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --purple: #a78bfa;
+      --radius: 16px;
+      --font: "Kantumruy Pro", "Khmer OS Battambang", "Segoe UI", sans-serif;
+      --mono: "JetBrains Mono", Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.22); border-radius: 99px; }
+
+    button, input, select { font-family: inherit; font-size: inherit; }
+
+    .btn {
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--soft);
+      color: var(--text);
+      border-radius: 11px;
+      padding: 10px 16px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      transition: background 0.14s ease, transform 0.1s ease, opacity 0.14s ease;
+      white-space: nowrap;
+      text-decoration: none;
+    }
+    .btn:hover:not(:disabled) { background: var(--soft-hover); }
+    .btn:active:not(:disabled) { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn.btn-muted { opacity: 0.58; }
+
+    .btn-primary {
+      background: var(--green);
+      border-color: transparent;
+      color: #032217;
+      font-weight: 700;
+    }
+    .btn-primary:hover:not(:disabled) { background: #34d399; }
+
+    .btn-amber {
+      background: rgba(245, 158, 11, 0.16);
+      border-color: rgba(245, 158, 11, 0.4);
+      color: #fcd34d;
+    }
+    .btn-amber:hover:not(:disabled) { background: rgba(245, 158, 11, 0.25); }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.16);
+      border-color: rgba(239, 68, 68, 0.4);
+      color: #fca5a5;
+    }
+    .btn-danger:hover:not(:disabled) { background: rgba(239, 68, 68, 0.26); }
+
+    .btn-ghost { background: transparent; border-color: transparent; color: var(--muted); }
+    .btn-ghost:hover:not(:disabled) { background: rgba(255, 255, 255, 0.06); color: var(--text); }
+
+    .btn-sm { padding: 7px 12px; font-size: 13px; border-radius: 9px; }
+    .btn-xs { padding: 5px 10px; font-size: 12px; border-radius: 8px; }
+
+    input[type="text"], input[type="search"], input[type="number"], select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 9px 12px;
+      outline: none;
+    }
+    input[type="search"]::-webkit-search-cancel-button { cursor: pointer; }
+    .masked-input { -webkit-text-security: disc; }
+    input:focus, select:focus { border-color: var(--blue); }
+
+    /* ULTRA-CLEAN TOPBAR */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background: rgba(11, 15, 23, 0.9);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+      height: 64px;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      user-select: none;
+      font-weight: 700;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+    .brand-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #10b981, #38bdf8);
+      color: #031914;
+      display: grid;
+      place-items: center;
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .search-pill {
+      flex: 1;
+      max-width: 520px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 99px;
+      padding: 4px 5px 4px 16px;
+    }
+    .search-pill:focus-within { border-color: var(--blue); }
+    .search-pill input {
+      border: none;
+      background: transparent;
+      flex: 1;
+      padding: 6px 0;
+      min-width: 80px;
+    }
+
+    .top-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+    @media (max-width: 760px) {
+      .topbar { height: auto; padding: 10px 14px; flex-wrap: wrap; }
+      .search-pill { order: 3; max-width: 100%; width: 100%; flex-basis: 100%; }
+    }
+
+    /* CONTAINER */
+    .wrap {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 24px 20px 84px;
+    }
+
+    /* VIEW 1: SIMPLE POSTER GRID */
+    .cat-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .cat-pill {
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      padding: 7px 16px;
+      border-radius: 99px;
+      font-size: 13.5px;
+      font-weight: 600;
+      transition: all 0.14s ease;
+    }
+    .cat-pill:hover { color: var(--text); background: var(--card); }
+    .cat-pill.active { background: var(--text); color: #0b0f17; border-color: var(--text); }
+
+    .search-header {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+      padding: 12px 16px;
+      border-radius: 12px;
+      background: var(--card);
+      border: 1px solid var(--border);
+    }
+    .search-header.show { display: flex; }
+
+    .poster-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+      gap: 20px;
+    }
+    @media (max-width: 560px) {
+      .poster-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    }
+
+    .poster-card {
+      background: transparent;
+      border: none;
+      padding: 0;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: transform 0.16s ease;
+    }
+    .poster-card:hover { transform: translateY(-4px); }
+
+    .poster-img-box {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 3 / 4;
+      border-radius: 13px;
+      overflow: hidden;
+      background: var(--card);
+      border: 1px solid var(--border);
+    }
+    .poster-card:hover .poster-img-box { border-color: rgba(56, 189, 248, 0.5); }
+    .poster-img-box img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .poster-ep-badge {
+      position: absolute;
+      bottom: 8px;
+      right: 8px;
+      background: rgba(11, 15, 23, 0.82);
+      backdrop-filter: blur(6px);
+      color: #f1f5f9;
+      font-size: 11.5px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 7px;
+    }
+    .poster-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    /* VIEW 2: SIMPLE DRAMA SCREEN */
+    .drama-view { display: none; flex-direction: column; gap: 18px; }
+    .drama-view.show { display: flex; }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px;
+    }
+
+    .hero {
+      display: flex;
+      gap: 22px;
+      align-items: center;
+    }
+    @media (max-width: 680px) { .hero { flex-direction: column; align-items: flex-start; } }
+    .hero-cover {
+      width: 120px;
+      height: 162px;
+      border-radius: 12px;
+      object-fit: cover;
+      background: var(--soft);
+      flex-shrink: 0;
+    }
+    .hero-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+    .hero-title { margin: 0; font-size: 21px; font-weight: 700; line-height: 1.3; word-break: break-word; }
+    .hero-sub { font-size: 14px; color: var(--muted); }
+    .hero-sub strong { color: var(--text); }
+    .hero-path {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      font-size: 12.5px;
+      color: var(--muted);
+    }
+    .hero-path code {
+      color: var(--blue);
+      font-family: var(--mono);
+      background: rgba(56, 189, 248, 0.08);
+      padding: 2px 8px;
+      border-radius: 6px;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .hero-btns { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 2px; }
+
+    /* SIMPLE PROGRESS BOX */
+    .prog-box { display: none; flex-direction: column; gap: 12px; }
+    .prog-box.show { display: flex; }
+
+    .prog-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .prog-title { font-size: 15px; font-weight: 700; }
+    .prog-stats { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+
+    .bar-bg { width: 100%; height: 10px; border-radius: 99px; background: var(--bg); overflow: hidden; }
+    .bar-fg {
+      height: 100%;
+      width: 0%;
+      border-radius: 99px;
+      background: linear-gradient(90deg, #10b981, #38bdf8);
+      transition: width 0.25s ease;
+    }
+    .bar-fg.warn { background: linear-gradient(90deg, #f59e0b, #ef4444); }
+
+    .prog-error-bar {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 10px 14px;
+      border-radius: 10px;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fecaca;
+      font-size: 13px;
+    }
+    .prog-error-bar.show { display: flex; }
+
+    .logs-box {
+      display: none;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-family: var(--mono);
+      font-size: 11.8px;
+      line-height: 1.55;
+      color: var(--muted);
+      max-height: 155px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .logs-box.show { display: block; }
+
+    /* SIMPLE EPISODES LIST */
+    .ep-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .ep-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(66px, 1fr));
+      gap: 8px;
+      max-height: 480px;
+      overflow-y: auto;
+      padding: 2px;
+    }
+    .ep-btn {
+      position: relative;
+      height: 44px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--soft);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      transition: transform 0.1s ease, border-color 0.14s ease, background 0.14s ease;
+    }
+    .ep-btn:hover { border-color: rgba(255, 255, 255, 0.3); transform: translateY(-1px); }
+    .ep-btn small { font-family: var(--font); font-size: 9.5px; line-height: 1; color: var(--muted); }
+    .ep-btn .pbar { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--blue); width: 0%; }
+
+    .ep-btn.selected { background: rgba(56, 189, 248, 0.18); border-color: var(--blue); color: #e0f2fe; }
+    .ep-btn.done { background: rgba(16, 185, 129, 0.14); border-color: rgba(16, 185, 129, 0.4); color: #86efac; }
+    .ep-btn.downloading, .ep-btn.resolving, .ep-btn.queued { background: rgba(56, 189, 248, 0.14); border-color: var(--blue); }
+    .ep-btn.transcoding, .ep-btn.queued_transcode, .ep-btn.decrypting { background: rgba(167, 139, 250, 0.16); border-color: var(--purple); }
+    .ep-btn.error, .ep-btn.broken { background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.55); color: #fca5a5; }
+
+    /* FLOATING SELECTION ACTION BAR */
+    .sel-float {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 50;
+      display: none;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px 10px 18px;
+      background: #172033;
+      border: 1px solid rgba(56, 189, 248, 0.45);
+      border-radius: 99px;
+      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.65);
+    }
+    .sel-float.show { display: flex; }
+
+    /* MINI JOB FLOAT */
+    .job-float {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 48;
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: #172033;
+      border: 1px solid rgba(16, 185, 129, 0.45);
+      border-radius: 99px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+      cursor: pointer;
+    }
+    .job-float.show { display: flex; }
+
+    /* RANGE POPOVER BAR */
+    .range-row {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 10px 14px;
+      margin-bottom: 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 13px;
+    }
+    .range-row.show { display: flex; }
+
+    /* LOADING OVERLAY */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 70;
+      background: rgba(11, 15, 23, 0.72);
+      backdrop-filter: blur(5px);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
+    .overlay.show { display: flex; }
+    .spinner {
+      width: 34px;
+      height: 34px;
+      border: 3px solid rgba(255, 255, 255, 0.14);
+      border-top-color: var(--green);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+
+    /* MODALS & TOASTS */
+    .modal-bg {
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      background: rgba(5, 8, 14, 0.78);
+      backdrop-filter: blur(6px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .modal-bg.show { display: flex; }
+    .modal {
+      width: 100%;
+      max-width: 480px;
+      background: var(--card);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+      overflow: hidden;
+    }
+    .modal.wide { max-width: 540px; }
+    .modal-head {
+      padding: 15px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 700;
+    }
+    .modal-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+    .modal-foot { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+
+    video.player { width: 100%; max-height: 70vh; border-radius: 10px; background: #000; }
+
+    .fp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .fp-chip {
+      padding: 5px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--soft);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .fp-chip:hover { background: var(--soft-hover); border-color: var(--blue); }
+    .fp-list {
+      border: 1px solid var(--border);
+      background: var(--bg);
+      border-radius: 10px;
+      max-height: 240px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+    .fp-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 12px;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+      font-size: 13.5px;
+    }
+    .fp-item:hover { background: rgba(56, 189, 248, 0.1); }
+    .fp-item:last-child { border-bottom: none; }
+
+    .toast-stack { position: fixed; top: 76px; right: 20px; z-index: 100; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+    .toast {
+      pointer-events: auto;
+      background: var(--soft);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 14px;
+      border-radius: 10px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .toast.ok { border-color: rgba(16, 185, 129, 0.55); color: #86efac; }
+    .toast.warn { border-color: rgba(245, 158, 11, 0.55); color: #fcd34d; }
+    .toast.err { border-color: rgba(239, 68, 68, 0.6); color: #fca5a5; }
+
+    /* TOPBAR NAV PILLS & POSTER QUICK ACTIONS */
+    .nav-tabs { display: flex; align-items: center; gap: 6px; background: var(--card); border: 1px solid var(--border); padding: 4px; border-radius: 12px; }
+    .nav-tab {
+      cursor: pointer; border: none; background: transparent; color: var(--muted);
+      padding: 6px 12px; border-radius: 8px; font-weight: 600; font-size: 13px;
+      display: inline-flex; align-items: center; gap: 6px; transition: all 0.14s ease; white-space: nowrap;
+    }
+    .nav-tab:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+    .nav-tab.active { background: var(--soft-hover); color: var(--text); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
+    .nav-badge {
+      padding: 1px 7px; border-radius: 99px; font-size: 11px; font-weight: 700;
+      font-family: var(--mono); background: var(--soft); color: var(--muted);
+    }
+    .nav-badge.running { background: rgba(16, 185, 129, 0.22); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.45); }
+
+    .poster-status-pill {
+      position: absolute; top: 8px; left: 8px; z-index: 2;
+      padding: 3px 8px; border-radius: 7px; font-size: 11px; font-weight: 700; font-family: var(--mono);
+      backdrop-filter: blur(6px); background: rgba(11, 15, 23, 0.85); border: 1px solid var(--border); color: var(--text);
+    }
+    .poster-status-pill.active { background: rgba(14, 165, 233, 0.9); color: #fff; border-color: rgba(56, 189, 248, 0.7); }
+    .poster-status-pill.saved { background: rgba(16, 185, 129, 0.9); color: #022c22; border-color: transparent; }
+
+    /* BROWSE TOOLBAR, LIVE DOCK & MULTI-SELECT UX */
+    .browse-toolbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+    .browse-toolbar .cat-row { margin-bottom: 0; flex: 1; min-width: 240px; }
+    .multi-toggle-btn { margin-left: auto; white-space: nowrap; border-radius: 99px; }
+    .multi-toggle-btn.active {
+      background: rgba(16, 185, 129, 0.18); border-color: var(--green); color: #6ee7b7;
+    }
+
+    .live-dock {
+      display: none; flex-direction: column; gap: 10px;
+      margin-bottom: 18px; padding: 13px 15px; border-radius: 14px;
+      background: linear-gradient(135deg, rgba(14, 165, 233, 0.11), rgba(16, 185, 129, 0.06));
+      border: 1px solid rgba(56, 189, 248, 0.35);
+    }
+    .live-dock.show { display: flex; }
+    .live-dock-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .live-dock-title { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 700; color: #e0f2fe; }
+    .live-dock-chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(225px, 1fr)); gap: 8px; }
+    .live-chip {
+      display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 10px;
+      background: rgba(11, 15, 23, 0.72); border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .live-chip-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; font-weight: 600; }
+    .live-chip-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+    .live-chip-pct { font-family: var(--mono); font-size: 11.5px; color: #7dd3fc; font-weight: 700; }
+    .live-chip-stop {
+      border: none; background: rgba(239, 68, 68, 0.16); color: #fca5a5;
+      border-radius: 6px; padding: 2px 6px; font-size: 11px; cursor: pointer; font-weight: 700;
+    }
+    .live-chip-stop:hover { background: rgba(239, 68, 68, 0.34); color: #fff; }
+    .live-chip-bar { height: 4px; border-radius: 99px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+    .live-chip-bar > div { height: 100%; background: linear-gradient(90deg, var(--blue), var(--green)); transition: width 0.25s ease; }
+
+    .poster-card.is-picked .poster-img-box {
+      border: 2px solid var(--green);
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.22);
+    }
+    .poster-pick-chk {
+      position: absolute; top: 8px; right: 8px; z-index: 3;
+      width: 28px; height: 28px; border-radius: 9px;
+      border: 1.5px solid rgba(255, 255, 255, 0.45);
+      background: rgba(11, 15, 23, 0.78); color: #fff; backdrop-filter: blur(6px);
+      display: grid; place-items: center; cursor: pointer; font-size: 14px; font-weight: 800;
+      transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+    }
+    .poster-pick-chk:hover { transform: scale(1.08); border-color: var(--green); }
+    .poster-card.is-picked .poster-pick-chk {
+      background: var(--green); color: #022c22; border-color: var(--green);
+    }
+    .poster-dl-btn {
+      margin-top: auto; width: 100%; padding: 7px 10px; border-radius: 9px;
+      border: 1px solid var(--border); background: var(--soft); color: var(--text);
+      font-size: 12px; font-weight: 700; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+    }
+    .poster-dl-btn:hover { background: var(--green); color: #032217; border-color: transparent; }
+    .poster-dl-btn.is-active {
+      background: rgba(14, 165, 233, 0.16); border-color: rgba(56, 189, 248, 0.5); color: #7dd3fc;
+    }
+    .poster-dl-btn.is-active:hover { background: rgba(14, 165, 233, 0.28); color: #fff; }
+    .poster-dl-btn.is-done {
+      background: rgba(16, 185, 129, 0.14); border-color: rgba(16, 185, 129, 0.4); color: #6ee7b7;
+    }
+
+    .multi-sel-float {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 52;
+      display: none; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center;
+      max-width: calc(100vw - 24px);
+      padding: 11px 16px; background: #131c2e;
+      border: 1.5px solid rgba(16, 185, 129, 0.55); border-radius: 16px;
+      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.72);
+    }
+    .multi-sel-float.show { display: flex; }
+    .multi-auto-lbl {
+      display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted);
+      cursor: pointer; padding: 4px 8px; border-radius: 8px; background: rgba(255, 255, 255, 0.04);
+    }
+    .multi-auto-lbl input { width: 15px; height: 15px; accent-color: var(--green); }
+
+    /* VIDEO MANAGEMENT VIEW */
+    .manage-view { display: none; flex-direction: column; gap: 18px; }
+    .manage-view.show { display: flex; }
+
+    .vm-head-card { display: flex; flex-direction: column; gap: 14px; }
+    .vm-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .vm-title-row h2 { margin: 0; font-size: 19px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+    .vm-live-pill {
+      display: none; align-items: center; gap: 7px; padding: 4px 11px; border-radius: 99px;
+      background: rgba(56, 189, 248, 0.14); border: 1px solid rgba(56, 189, 248, 0.38);
+      color: #7dd3fc; font-size: 12.5px; font-weight: 600;
+    }
+    .vm-live-pill.show { display: inline-flex; }
+
+    .vm-controls-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .vm-filters { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .vm-filter-btn {
+      cursor: pointer; border: 1px solid var(--border); background: var(--soft); color: var(--muted);
+      padding: 6px 12px; border-radius: 99px; font-size: 12.5px; font-weight: 600; transition: all 0.14s ease;
+    }
+    .vm-filter-btn:hover { color: var(--text); background: var(--soft-hover); }
+    .vm-filter-btn.active { background: var(--text); color: #0b0f17; border-color: var(--text); }
+
+    .vm-sec-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+    .vm-sec-title { font-size: 15px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
+
+    .vm-jobs-stack { display: flex; flex-direction: column; gap: 12px; }
+    .vm-job-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 15px 17px; display: flex; gap: 15px; align-items: flex-start;
+    }
+    .vm-job-card.is-active { border-color: rgba(56, 189, 248, 0.42); background: linear-gradient(135deg, rgba(56, 189, 248, 0.05), var(--card)); }
+    .vm-job-card.is-done { border-color: rgba(16, 185, 129, 0.35); }
+    .vm-job-card.is-error, .vm-job-card.is-partial { border-color: rgba(245, 158, 11, 0.4); }
+
+    .vm-thumb {
+      width: 56px; height: 76px; border-radius: 9px; object-fit: cover; flex-shrink: 0;
+      background: linear-gradient(135deg, #1e293b, #0f172a); border: 1px solid var(--border);
+      display: grid; place-items: center; font-size: 20px; color: var(--muted); overflow: hidden;
+    }
+    .vm-thumb.lg { width: 70px; height: 96px; }
+    .vm-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+    .vm-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+    .vm-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .vm-card-title { font-size: 15px; font-weight: 700; line-height: 1.35; word-break: break-word; }
+    .vm-card-sub { font-size: 12px; color: var(--muted); margin-top: 2px; word-break: break-word; }
+    .vm-badge {
+      padding: 3px 9px; border-radius: 99px; font-size: 11.5px; font-weight: 700; white-space: nowrap;
+      border: 1px solid var(--border); background: var(--soft); color: var(--text);
+    }
+    .vm-badge.active { background: rgba(56, 189, 248, 0.16); border-color: rgba(56, 189, 248, 0.45); color: #7dd3fc; }
+    .vm-badge.done { background: rgba(16, 185, 129, 0.16); border-color: rgba(16, 185, 129, 0.45); color: #6ee7b7; }
+    .vm-badge.warn { background: rgba(245, 158, 11, 0.16); border-color: rgba(245, 158, 11, 0.45); color: #fcd34d; }
+    .vm-badge.err { background: rgba(239, 68, 68, 0.16); border-color: rgba(239, 68, 68, 0.45); color: #fca5a5; }
+    .vm-badge-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+    .vm-stats { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+    .vm-stats .mono { font-family: var(--mono); color: var(--text); }
+    .vm-actions { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; margin-top: 2px; }
+
+    .vm-lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; }
+    @media (max-width: 520px) { .vm-lib-grid { grid-template-columns: 1fr; } .vm-job-card { flex-direction: column; } }
+    .vm-lib-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 15px; display: flex; gap: 14px; align-items: flex-start;
+      transition: border-color 0.14s ease;
+    }
+    .vm-lib-card:hover { border-color: rgba(255, 255, 255, 0.16); }
+
+    .video-ep-strip {
+      display: none; flex-wrap: wrap; gap: 6px; max-height: 112px; overflow-y: auto;
+      padding: 8px; border-radius: 10px; background: var(--bg); border: 1px solid var(--border);
+    }
+    .video-ep-strip.show { display: flex; }
+    .video-ep-chip {
+      cursor: pointer; padding: 4px 10px; border-radius: 7px; border: 1px solid var(--border);
+      background: var(--soft); color: var(--text); font-size: 12px; font-family: var(--mono); font-weight: 600;
+    }
+    .video-ep-chip:hover { border-color: var(--blue); }
+    .video-ep-chip.active { background: var(--green); color: #032217; border-color: transparent; }
+
+    /* SEQUENTIAL EPISODE BOX IN VIDEO MANAGEMENT & MERGE MODAL */
+    .vm-ep-box {
+      margin-top: 8px; padding: 10px; border-radius: 10px;
+      background: var(--bg); border: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .vm-ep-pills { display: flex; flex-wrap: wrap; gap: 5px; max-height: 150px; overflow-y: auto; }
+    .vm-ep-pill {
+      cursor: pointer; padding: 4px 8px; border-radius: 7px; border: 1px solid var(--border);
+      background: var(--soft); color: var(--text); font-size: 11.5px; font-family: var(--mono); font-weight: 700;
+      transition: border-color 0.12s ease, background 0.12s ease;
+    }
+    .vm-ep-pill:hover { border-color: var(--green); color: #6ee7b7; }
+    .vm-merged-pill {
+      cursor: pointer; padding: 4px 9px; border-radius: 7px;
+      border: 1px solid rgba(16, 185, 129, 0.45); background: rgba(16, 185, 129, 0.14);
+      color: #6ee7b7; font-size: 11.5px; font-weight: 700;
+    }
+    .vm-merged-pill:hover { background: rgba(16, 185, 129, 0.28); color: #fff; }
+
+    .modal.merge-w { max-width: 620px; }
+    .merge-warn {
+      display: none; padding: 9px 12px; border-radius: 10px; font-size: 12.5px; line-height: 1.5;
+      background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.45); color: #fcd34d;
+    }
+    .merge-warn.show { display: block; }
+    .merge-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+    .merge-ep-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 6px;
+      max-height: 185px; overflow-y: auto; padding: 9px; border-radius: 10px;
+      background: var(--bg); border: 1px solid var(--border);
+    }
+    .merge-ep-item {
+      cursor: pointer; padding: 6px 4px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--soft); color: var(--muted); font-size: 12px; font-family: var(--mono); font-weight: 700;
+      text-align: center; transition: all 0.12s ease;
+    }
+    .merge-ep-item:hover { border-color: var(--blue); color: var(--text); }
+    .merge-ep-item.active {
+      background: rgba(16, 185, 129, 0.22); border-color: var(--green); color: #6ee7b7;
+    }
+    .merge-preview-box {
+      padding: 10px 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--border);
+      font-size: 12.5px; line-height: 1.55; color: var(--muted);
+    }
+    .merge-preview-box strong { color: var(--text); }
+
+    /* PLATFORM SWITCHER & UNIVERSAL SOCIAL VIDEO PANEL */
+    .source-row {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border);
+    }
+    .source-pill {
+      cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 14px; border-radius: 10px; font-size: 13px; font-weight: 700;
+      border: 1px solid var(--border); background: var(--card); color: var(--muted);
+      transition: all 0.14s ease;
+    }
+    .source-pill:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
+    .source-pill.active {
+      background: rgba(56, 189, 248, 0.16); border-color: var(--blue); color: #7dd3fc;
+      box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.25);
+    }
+    .source-pill.social-tab.active {
+      background: rgba(16, 185, 129, 0.16); border-color: var(--green); color: #6ee7b7;
+      box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.25);
+    }
+
+    .poster-src-tag {
+      position: absolute; top: 8px; right: 34px; z-index: 2;
+      padding: 2px 7px; border-radius: 6px; font-size: 10.5px; font-weight: 700;
+      background: rgba(11, 15, 23, 0.85); border: 1px solid rgba(255,255,255,0.16); color: #cbd5e1;
+      text-transform: uppercase; pointer-events: none;
+    }
+    .ep-btn.locked {
+      opacity: 0.5; border-style: dashed; border-color: rgba(245, 158, 11, 0.35);
+      color: var(--muted); background: rgba(255,255,255,0.02);
+    }
+    .ep-btn.locked small { color: var(--amber); font-size: 10px; }
+
+    .social-panel { display: none; flex-direction: column; gap: 16px; margin-top: 6px; }
+    .social-panel.show { display: flex; }
+    .social-hero {
+      background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+      padding: 20px; display: flex; flex-direction: column; gap: 14px;
+    }
+    .social-url-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .social-url-row input { flex: 1; min-width: 240px; padding: 11px 14px; font-size: 14px; }
+    .social-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+    .social-plat-chip {
+      padding: 3px 9px; border-radius: 99px; font-size: 11.5px; font-weight: 600;
+      background: var(--soft); border: 1px solid var(--border); color: var(--muted);
+    }
+    .social-result {
+      display: none; background: var(--card); border: 1px solid rgba(16, 185, 129, 0.35);
+      border-radius: 16px; padding: 18px; gap: 18px; align-items: flex-start; flex-wrap: wrap;
+    }
+    .social-result.show { display: flex; }
+    .social-thumb {
+      width: 220px; max-width: 100%; aspect-ratio: 16 / 9; border-radius: 12px;
+      object-fit: cover; background: #0d1320; border: 1px solid var(--border);
+    }
+    .social-info { flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 10px; }
+    .social-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 4px; }
+    .social-playlist {
+      width: 100%; max-height: 220px; overflow-y: auto; padding: 10px;
+      border-radius: 10px; background: var(--bg); border: 1px solid var(--border);
+      display: none; flex-direction: column; gap: 6px;
+    }
+    .social-playlist.show { display: flex; }
+    .social-pl-item {
+      display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: 8px;
+      background: var(--soft); font-size: 12.5px; cursor: pointer;
+    }
+    .social-pl-item:hover { background: rgba(255,255,255,0.08); }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <!-- SIMPLE TOPBAR -->
+  <header class="topbar">
+    <div id="brandHome" class="brand" title="ទំព័រដើម">
+      <div class="brand-icon">EZ</div>
+      <span>EZA PRO</span>
+    </div>
+
+    <div class="search-pill" role="search">
+      <input
+        id="searchInput"
+        type="search"
+        name="drama_query"
+        placeholder="វាយឈ្មោះរឿង ឬ បិទភ្ជាប់ Link..."
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck="false"
+        data-lpignore="true"
+        data-1p-ignore="true"
+        data-form-type="search"
+      />
+      <button id="btnPaste" class="btn btn-ghost btn-xs" title="បិទភ្ជាប់">📋</button>
+      <button id="btnResolve" class="btn btn-primary btn-xs" style="border-radius: 99px; padding: 6px 15px;">ស្វែងរក</button>
+    </div>
+
+    <div class="top-actions">
+      <nav class="nav-tabs" aria-label="Primary">
+        <button id="btnNavBrowse" class="nav-tab active" title="ស្វែងរករឿងភាគ">🎬 រឿងភាគ</button>
+        <button id="btnNavManage" class="nav-tab" title="គ្រប់គ្រងវីដេអូ & ការទាញយក">
+          <span>📥 គ្រប់គ្រងវីដេអូ</span>
+          <span id="navActiveBadge" class="nav-badge" style="display: none;">0</span>
+        </button>
+      </nav>
+      <button id="btnBackToRunning" class="btn btn-sm" style="display: none;">📺 រឿងបច្ចុប្បន្ន</button>
+      <button id="btnOpenFolderTop" class="btn btn-ghost btn-sm" title="បើកថតវីដេអូ">📂</button>
+      <button id="btnSettings" class="btn btn-ghost btn-sm" title="ការកំណត់">⚙️</button>
+    </div>
+  </header>
+
+  <div id="cloudBannerBar" style="display:none; background:rgba(56,189,248,0.12); border-bottom:1px solid rgba(56,189,248,0.3); color:#bae6fd; padding:8px 24px; font-size:13px; text-align:center; font-weight:600;"></div>
+
+  <div id="loadingOverlay" class="overlay">
+    <div class="spinner"></div>
+    <div id="loadingMsg" style="font-weight: 600;">កំពុងទាញយកទិន្នន័យ...</div>
+  </div>
+
+  <main class="wrap">
+    <!-- HOME / BROWSE SCREEN -->
+    <section id="browseView">
+      <div id="liveDock" class="live-dock">
+        <div class="live-dock-head">
+          <div class="live-dock-title">
+            <span class="spinner" style="width: 14px; height: 14px; border-width: 2px;"></span>
+            <span id="liveDockSummary">កំពុងទាញយក...</span>
+          </div>
+          <div style="display: flex; gap: 7px; flex-wrap: wrap;">
+            <button id="btnLiveDockManage" class="btn btn-primary btn-xs">📥 មើលគ្រប់គ្រងវីដេអូ</button>
+            <button id="btnLiveDockStopAll" class="btn btn-danger btn-xs">⏹️ បញ្ឈប់ទាំងអស់</button>
+          </div>
+        </div>
+        <div id="liveDockChips" class="live-dock-chips"></div>
+      </div>
+
+      <div id="searchHeader" class="search-header">
+        <span id="searchHeaderText">លទ្ធផលស្វែងរក</span>
+        <button id="btnClearSearch" class="btn btn-xs">✖️ ត្រឡប់ទៅបញ្ជីរឿង</button>
+      </div>
+
+      <div id="sourceRow" class="source-row"></div>
+
+      <div id="browseToolbar" class="browse-toolbar">
+        <div id="catRow" class="cat-row"></div>
+        <button id="btnMultiSelectMode" class="btn btn-sm multi-toggle-btn" title="រើសរឿងច្រើនទាញយកព្រមគ្នា">☑️ រើសច្រើនរឿង</button>
+      </div>
+
+      <div id="socialPanel" class="social-panel">
+        <div class="social-hero">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+            <div>
+              <div style="font-size:16px;font-weight:700;">🌐 ទាញយកវីដេអូ &amp; Playlist ពីគ្រប់ Platform (yt-dlp Open Source)</div>
+              <div style="font-size:12.5px;color:var(--muted);margin-top:2px;">បិទភ្ជាប់ Link វីដេអូ ឬ Playlist រួចជ្រើសគុណភាព — ឯកសារនឹងចូលក្នុង <strong>គ្រប់គ្រងវីដេអូ</strong> ដោយស្វ័យប្រវត្តិ!</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+              <span id="ytdlpVerBadge" class="vm-badge done" style="display:none;">yt-dlp</span>
+              <span id="aria2VerBadge" class="vm-badge done" style="display:none;">aria2c</span>
+              <span id="nm3u8VerBadge" class="vm-badge done" style="display:none;">N_m3u8DL-RE</span>
+              <span id="gpuEncBadge" class="vm-badge done" style="display:none;">GPU</span>
+            </div>
+          </div>
+          <div class="social-url-row">
+            <input id="socialUrlInput" type="text" placeholder="https://www.tiktok.com/... ឬ YouTube / Douyin / Facebook / Instagram / Bilibili..." autocomplete="off" />
+            <button id="btnSocialPaste" type="button" class="btn btn-sm">📋 បិទភ្ជាប់</button>
+            <button id="btnSocialProbe" type="button" class="btn btn-primary btn-sm">🔍 វិភាគ Link</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between;">
+            <div class="social-badges">
+              <span class="social-plat-chip">🎵 TikTok (No Watermark)</span>
+              <span class="social-plat-chip">▶️ YouTube / Playlist</span>
+              <span class="social-plat-chip">🎼 Douyin</span>
+              <span class="social-plat-chip">📘 Facebook</span>
+              <span class="social-plat-chip">📸 Instagram Reels</span>
+              <span class="social-plat-chip">📺 Bilibili</span>
+              <span class="social-plat-chip">🎬 Dailymotion</span>
+              <span class="social-plat-chip">📌 Pinterest</span>
+              <span class="social-plat-chip">🧡 Kuaishou</span>
+            </div>
+            <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;">
+              🍪 Browser Cookie (សម្រាប់ Douyin/IG បើទាមទារ):
+              <select id="socialCookieSelect" style="padding:4px 8px;font-size:12px;">
+                <option value="">មិនបាច់ (សាធារណៈ)</option>
+                <option value="chrome">Chrome</option>
+                <option value="edge">Microsoft Edge</option>
+                <option value="firefox">Firefox</option>
+                <option value="brave">Brave</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div id="socialResult" class="social-result">
+          <img id="socialThumb" class="social-thumb" src="" referrerpolicy="no-referrer" alt="" />
+          <div class="social-info">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span id="socialPlatBadge" class="vm-badge active">🌐 Web</span>
+              <span id="socialDurBadge" class="vm-badge">00:00</span>
+            </div>
+            <div id="socialTitle" style="font-size:17px;font-weight:700;line-height:1.35;"></div>
+            <div id="socialUploader" style="font-size:12.5px;color:var(--muted);"></div>
+            <div class="social-controls">
+              <label style="font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px;">
+                គុណភាព:
+                <select id="socialQualitySelect" style="padding:6px 10px;font-size:13px;">
+                  <option value="best">💎 ល្អបំផុត (Best MP4)</option>
+                  <option value="1080p">🎬 Full HD (1080p)</option>
+                  <option value="720p">⚡ HD (720p)</option>
+                  <option value="480p">📱 SD (480p)</option>
+                  <option value="mp3">🎵 សំឡេងតែប៉ុណ្ណោះ (MP3)</option>
+                </select>
+              </label>
+              <label style="font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
+                <input id="socialUseAria2" type="checkbox" checked />
+                ⚡ aria2c x16 (លឿនជាងមុន)
+              </label>
+              <button id="btnSocialDownload" type="button" class="btn btn-primary">⬇️ ទាញយកភ្លាម</button>
+            </div>
+            <div id="socialPlaylistHeader" style="display:none;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;">
+              <span id="socialPlaylistSummary" style="font-size:12.5px;font-weight:700;color:var(--text);"></span>
+              <div style="display:flex;gap:6px;">
+                <button id="btnSocialPlAll" type="button" class="btn btn-xs">រើសទាំងអស់</button>
+                <button id="btnSocialPlClear" type="button" class="btn btn-xs">លុបការរើស</button>
+              </div>
+            </div>
+            <div id="socialPlaylistBox" class="social-playlist"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="dramaGrid" class="poster-grid">
+        <div style="grid-column: 1 / -1; padding: 64px 16px; text-align: center; color: var(--muted);">
+          <div class="spinner" style="margin: 0 auto 12px;"></div>
+          កំពុងផ្ទុករឿង...
+        </div>
+      </div>
+
+      <div id="loadMoreWrap" style="margin-top: 26px; display: flex; justify-content: center;">
+        <button id="btnLoadMore" class="btn btn-sm">មើលរឿងបន្ថែមទៀត</button>
+      </div>
+    </section>
+
+    <!-- DRAMA DETAIL & DOWNLOAD SCREEN -->
+    <section id="dramaView" class="drama-view">
+      <div>
+        <button id="btnBackHome" class="btn btn-ghost btn-sm">← ត្រឡប់ទៅបញ្ជីរឿង</button>
+      </div>
+
+      <!-- HERO -->
+      <div class="card hero">
+        <img id="heroCover" class="hero-cover" src="" referrerpolicy="no-referrer" alt="" />
+        <div class="hero-info">
+          <h1 id="heroTitle" class="hero-title">—</h1>
+          <div id="heroStats" class="hero-sub">សរុប 0 ភាគ</div>
+          <div class="hero-path">
+            <span>📁 រក្សាទុកក្នុង៖</span>
+            <code id="savePathLabel">—</code>
+            <button id="btnPickFolderInline" class="btn btn-xs">ប្ដូរទីតាំង</button>
+          </div>
+
+          <div class="hero-btns">
+            <button id="btnDownloadAll" class="btn btn-primary">⬇️ ទាញយកទាំងអស់</button>
+            <button id="btnRetryFailed" class="btn btn-amber" style="display: none;">🔄 ទាញភាគបរាជ័យឡើងវិញ</button>
+            <button id="btnStop" class="btn btn-danger" style="display: none;">⏹️ បញ្ឈប់</button>
+            <button id="btnMerge" class="btn">🎞️ ផ្គុំជា ១ វីដេអូ</button>
+            <button id="btnPlayFull" class="btn" style="display: none; border-color: rgba(16, 185, 129, 0.5); color: #34d399;">▶️ មើលរឿងពេញ</button>
+            <button id="btnOpenDramaFolder" class="btn">📂 បើកថត</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- PROGRESS (SHOWN WHEN ACTIVE OR FINISHED) -->
+      <div id="progBox" class="card prog-box">
+        <div class="prog-row">
+          <span id="progTitle" class="prog-title">កំពុងរៀបចំ...</span>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span id="progStats" class="prog-stats">0%</span>
+            <button id="btnToggleLogs" class="btn btn-ghost btn-xs">លម្អិត ▾</button>
+          </div>
+        </div>
+
+        <div class="bar-bg"><div id="barFg" class="bar-fg"></div></div>
+
+        <div id="progErrorBar" class="prog-error-bar">
+          <span id="progErrorText">មានភាគបរាជ័យ</span>
+          <button id="btnRetryStrip" class="btn btn-amber btn-xs">🔄 សាកទាញឡើងវិញ</button>
+        </div>
+
+        <div id="logsBox" class="logs-box"></div>
+      </div>
+
+      <!-- EPISODES -->
+      <div class="card">
+        <div class="ep-head">
+          <strong style="font-size: 15px;">បញ្ជីភាគ (<span id="epCountLabel">0</span>)</strong>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <span style="font-size: 12px; color: var(--muted);">ពណ៌បៃតង = ចុចមើល • ផ្សេងទៀត = ចុចរើស</span>
+            <button id="btnToggleRange" class="btn btn-xs">រើសតាមចន្លោះ</button>
+          </div>
+        </div>
+
+        <div id="rangeRow" class="range-row">
+          <span>ចាប់ពីភាគ</span>
+          <input id="rangeFrom" type="number" min="1" value="1" style="width: 68px; padding: 5px 8px; text-align: center;" />
+          <span>ដល់</span>
+          <input id="rangeTo" type="number" min="1" value="20" style="width: 68px; padding: 5px 8px; text-align: center;" />
+          <button id="btnDownloadRange" class="btn btn-primary btn-xs">⬇️ ទាញចន្លោះនេះ</button>
+        </div>
+
+        <div id="epGrid" class="ep-grid"></div>
+      </div>
+    </section>
+
+    <!-- VIDEO MANAGEMENT & MULTI-DOWNLOAD SCREEN -->
+    <section id="manageView" class="manage-view">
+      <div class="card vm-head-card">
+        <div class="vm-title-row">
+          <h2>
+            <span>📥 គ្រប់គ្រងវីដេអូ &amp; ការទាញយក</span>
+            <span id="vmLivePill" class="vm-live-pill"></span>
+          </h2>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button id="btnAddMoreDramas" class="btn btn-primary btn-sm">➕ រើសរឿងទាញថែម</button>
+            <button id="btnStopAllJobs" class="btn btn-danger btn-sm" style="display: none;">⏹️ បញ្ឈប់ទាំងអស់</button>
+            <button id="btnClearFinishedJobs" class="btn btn-sm" style="display: none;">🧹 សម្អាតបញ្ជីចប់</button>
+            <button id="btnRefreshManage" class="btn btn-sm">🔄 ធ្វើបច្ចុប្បន្នភាព</button>
+          </div>
+        </div>
+
+        <div class="hero-path">
+          <span>📁 ទីតាំងថតរក្សាទុក៖</span>
+          <code id="vmPathLabel">—</code>
+          <button id="btnPickFolderManage" class="btn btn-xs">ប្ដូរថត</button>
+          <button id="btnOpenRootManage" class="btn btn-xs">📂 បើកថត</button>
+        </div>
+
+        <div class="vm-controls-row">
+          <div id="vmFilters" class="vm-filters">
+            <button class="vm-filter-btn active" data-filter="all">ទាំងអស់</button>
+            <button class="vm-filter-btn" data-filter="active">⏳ កំពុងដំណើរការ (<span id="vmCountActive">0</span>)</button>
+            <button class="vm-filter-btn" data-filter="library">✅ រួចរាល់ / ក្នុងថត (<span id="vmCountLibrary">0</span>)</button>
+          </div>
+          <input
+            id="vmSearchInput"
+            type="search"
+            placeholder="ស្វែងរកក្នុងបញ្ជីវីដេអូ..."
+            autocomplete="off"
+            spellcheck="false"
+            style="min-width: 220px; padding: 6px 12px; font-size: 13px;"
+          />
+        </div>
+      </div>
+
+      <div id="vmJobsSection" style="display: none;">
+        <div class="vm-sec-head">
+          <div class="vm-sec-title">🚀 ការងារកំពុងទាញយក / ថ្មីៗ</div>
+        </div>
+        <div id="vmJobsList" class="vm-jobs-stack"></div>
+      </div>
+
+      <div id="vmLibSection">
+        <div class="vm-sec-head">
+          <div class="vm-sec-title">📚 រឿងភាគដែលមានក្នុងថតទាញយក</div>
+          <span id="vmLibSummary" style="font-size: 12.5px; color: var(--muted);"></span>
+        </div>
+        <div id="vmLibGrid" class="vm-lib-grid"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- FLOATING BAR WHEN EPISODES ARE SELECTED -->
+  <div id="selFloat" class="sel-float">
+    <span id="selFloatLabel" style="font-weight: 600;">បានរើស 0 ភាគ</span>
+    <button id="btnDownloadSel" class="btn btn-primary btn-sm" style="border-radius: 99px;">⬇️ ទាញយក</button>
+    <button id="btnClearSel" class="btn btn-ghost btn-xs">✖️</button>
+  </div>
+
+  <!-- FLOATING BAR WHEN MULTIPLE DRAMAS ARE SELECTED ON BROWSE -->
+  <div id="multiSelFloat" class="multi-sel-float">
+    <span id="multiSelLabel" style="font-weight: 700; font-size: 13.5px; color: #f8fafc;">បានរើស 0 រឿង</span>
+    <label class="multi-auto-lbl" title="ផ្គុំរឿងនីមួយៗជា ១ វីដេអូពេញដោយស្វ័យប្រវត្តិក្រោយទាញចប់">
+      <input id="chkMultiAutoMerge" type="checkbox" />
+      <span>🎞️ ផ្គុំពេញស្វ័យប្រវត្តិ</span>
+    </label>
+    <button id="btnDownloadPicked" class="btn btn-primary btn-sm" style="border-radius: 99px;">⬇️ ទាញយកទាំងអស់ព្រមគ្នា</button>
+    <button id="btnClearPicked" class="btn btn-ghost btn-xs" title="សម្អាតការជ្រើសរើស">✖️</button>
+  </div>
+
+  <!-- FLOATING MINI JOB STATUS WHEN BROWSING HOME -->
+  <div id="jobFloat" class="job-float" title="ចុចដើម្បីមើលដំណើរការ">
+    <div class="spinner" style="width: 16px; height: 16px; border-width: 2px;"></div>
+    <span id="jobFloatText" style="font-size: 13px; font-weight: 600;">កំពុងទាញ 0%</span>
+  </div>
+
+  <!-- SETTINGS MODAL -->
+  <div id="settingsModal" class="modal-bg">
+    <div class="modal">
+      <div class="modal-head">
+        <span>⚙️ ការកំណត់</span>
+        <button class="btn btn-ghost btn-xs" data-close="settingsModal">✖️</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label>📁 ថតរក្សាទុកវីដេអូ</label>
+          <div style="display: flex; gap: 8px;">
+            <input id="folderInput" type="text" style="flex: 1;" />
+            <button id="btnBrowseFolder" class="btn btn-sm">ជ្រើសថត</button>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="field">
+            <label>🎞️ គុណភាពវីដេអូ</label>
+            <select id="qualitySelect">
+              <option value="fast">⚡ លឿន (Fast HD)</option>
+              <option value="1080p">💎 ច្បាស់ 1080p</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>⚡ ល្បឿន Threads</label>
+            <select id="workersSelect">
+              <option value="6">6 (ស្រាល)</option>
+              <option value="8" selected>8 (ល្អបំផុត)</option>
+              <option value="12">12 (លឿន)</option>
+              <option value="16">16 (⚡ Turbo កំពូល)</option>
+            </select>
+          </div>
+        </div>
+
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
+          <input id="chkAutoMerge" type="checkbox" style="width: 16px; height: 16px;" />
+          ផ្គុំរឿងពេញដោយស្វ័យប្រវត្តិក្រោយទាញចប់
+        </label>
+
+        <div class="field">
+          <label>✨ Gemini API Key <span id="geminiHint" style="font-weight: 400;"></span></label>
+          <input
+            id="geminiInput"
+            class="masked-input"
+            type="text"
+            name="gemini_api_key_token"
+            placeholder="AIzaSy... (មិនបាច់បំពេញបើមិនប្តូរ)"
+            autocomplete="new-password"
+            spellcheck="false"
+            data-lpignore="true"
+            data-form-type="other"
+          />
+        </div>
+
+        <div id="settingsLicenseBox" style="display:none; padding:10px 12px; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.32); border-radius:11px; flex-direction:column; gap:6px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+            <span style="font-size:12.5px; font-weight:700; color:#6ee7b7;">🔐 អាជ្ញាប័ណ្ណ EZA PRO</span>
+            <span id="settingsLicCustomer" style="font-size:12px; color:var(--text); font-weight:600;">—</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px; color:var(--muted);">
+            <span>Machine ID: <code id="settingsMachineIdText" style="color:#7dd3fc;">EZA-....</code></span>
+            <div style="display:flex; gap:6px;">
+              <button id="btnCopySettingsHwid" type="button" class="btn btn-xs">📋 ចម្លង ID</button>
+              <button id="btnSwitchLicenseKey" type="button" class="btn btn-xs btn-amber">🔑 ប្តូរ Key</button>
+            </div>
+          </div>
+          <div id="settingsLicExpiry" style="font-size:11.5px; color:var(--muted);"></div>
+        </div>
+
+        <div id="settingsAppFooter" style="padding-top: 6px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 12px; color: var(--muted);">EZA PRO Downloader v1.0.0</span>
+          <span style="font-size: 12px; color: var(--dim);">Powered by EZA PRO</span>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost btn-sm" data-close="settingsModal">បិទ</button>
+        <button id="btnSaveSettings" class="btn btn-primary btn-sm">រក្សាទុក</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIDEO PLAYER MODAL -->
+  <div id="videoModal" class="modal-bg">
+    <div class="modal wide">
+      <div class="modal-head">
+        <span id="videoTitle">មើលវីដេអូ</span>
+        <button id="btnCloseVideo" class="btn btn-ghost btn-xs">✖️</button>
+      </div>
+      <div class="modal-body">
+        <video id="videoPlayer" class="player" controls playsinline></video>
+        <div id="videoEpStrip" class="video-ep-strip"></div>
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <div style="display: flex; gap: 6px;">
+            <button id="btnPrevEp" class="btn btn-sm">⏮️ ភាគមុន</button>
+            <button id="btnNextEp" class="btn btn-sm">ភាគបន្ទាប់ ⏭️</button>
+            <button id="btnWatchFullInModal" class="btn btn-sm" style="display: none; border-color: rgba(16, 185, 129, 0.5); color: #34d399;">🎬 មើលរឿងពេញ</button>
+          </div>
+          <button id="btnRedownloadEp" class="btn btn-amber btn-xs">🔄 ទាញភាគនេះឡើងវិញ</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SEQUENTIAL MERGE MODAL -->
+  <div id="mergeModal" class="modal-bg" style="z-index: 92;">
+    <div class="modal merge-w">
+      <div class="modal-head">
+        <span>🎞️ ផ្គុំវីដេអូតាមលំដាប់ភាគ</span>
+        <button class="btn btn-ghost btn-xs" data-close="mergeModal">✖️</button>
+      </div>
+      <div class="modal-body">
+        <div id="mergeModalInfo" style="font-size: 13.5px; font-weight: 700;">—</div>
+        <div id="mergeWarnBanner" class="merge-warn"></div>
+
+        <div class="field">
+          <label>📌 ជ្រើសលំដាប់រហ័ស</label>
+          <div id="mergePresets" class="merge-presets"></div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px;">
+          <span>ចាប់ពីភាគ</span>
+          <input id="mergeFromInput" type="number" min="1" style="width: 72px; padding: 5px 8px; text-align: center;" />
+          <span>ដល់</span>
+          <input id="mergeToInput" type="number" min="1" style="width: 72px; padding: 5px 8px; text-align: center;" />
+          <button id="btnApplyMergeRange" class="btn btn-sm">✓ រើសតាមចន្លោះ</button>
+        </div>
+
+        <div class="field">
+          <label>🎬 ភាគដែលនឹងផ្គុំតាមលំដាប់ (<span id="mergeSelCount">0</span> ភាគ — ចុចរើស/ដកតាមភាគបាន)</label>
+          <div id="mergeEpGrid" class="merge-ep-grid"></div>
+        </div>
+
+        <div id="mergePreviewBox" class="merge-preview-box"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost btn-sm" data-close="mergeModal">បោះបង់</button>
+        <button id="btnConfirmMerge" class="btn btn-primary btn-sm">🎞️ ចាប់ផ្តើមផ្គុំតាមលំដាប់</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONFIRM DELETE MODAL -->
+  <div id="confirmDeleteModal" class="modal-bg" style="z-index: 95;">
+    <div class="modal" style="max-width: 420px;">
+      <div class="modal-head">
+        <span>🗑️ បញ្ជាក់ការលុប</span>
+        <button class="btn btn-ghost btn-xs" data-close="confirmDeleteModal">✖️</button>
+      </div>
+      <div class="modal-body">
+        <div id="confirmDeleteMsg" style="font-size: 13.5px; line-height: 1.6;">តើអ្នកពិតជាចង់លុបវីដេអូនេះមែនទេ?</div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost btn-sm" data-close="confirmDeleteModal">បោះបង់</button>
+        <button id="btnConfirmDeleteOk" class="btn btn-danger btn-sm">🗑️ លុបចោល</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOLDER PICKER MODAL -->
+  <div id="folderPickerModal" class="modal-bg" style="z-index: 90;">
+    <div class="modal wide">
+      <div class="modal-head">
+        <span>📁 ជ្រើសរើសថតរក្សាទុកវីដេអូ</span>
+        <button class="btn btn-ghost btn-xs" data-close="folderPickerModal">✖️</button>
+      </div>
+      <div class="modal-body">
+        <div id="fpQuickBar" class="fp-chips"></div>
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <button id="fpUpBtn" class="btn btn-sm" title="ត្រឡប់ថតខាងលើ">⬆️ ថតមុន</button>
+          <input id="fpCurrentInput" type="text" style="flex: 1; font-family: var(--mono); font-size: 12.5px;" />
+          <button id="fpGoBtn" class="btn btn-sm">បើក</button>
+        </div>
+        <div id="fpList" class="fp-list"></div>
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <input id="fpNewFolderInput" type="text" placeholder="ឈ្មោះថតថ្មី (ឧ. Movies)..." style="flex: 1; font-size: 13px;" />
+          <button id="fpCreateBtn" class="btn btn-sm">➕ បង្កើតថតថ្មី</button>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost btn-sm" data-close="folderPickerModal">បោះបង់</button>
+        <button id="fpSelectBtn" class="btn btn-primary btn-sm">✅ រក្សាទុកក្នុងថតនេះ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FULL-SCREEN CLOUD LICENSE GATE -->
+  <div id="licenseGateOverlay" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(4,8,18,0.97); backdrop-filter:blur(10px); align-items:center; justify-content:center; padding:18px;">
+    <div style="width:100%; max-width:430px; background:var(--card); border:1px solid rgba(16,185,129,0.45); border-radius:20px; padding:26px 24px; box-shadow:0 24px 64px rgba(0,0,0,0.75); display:flex; flex-direction:column; align-items:center; gap:13px; text-align:center;">
+      <div style="width:58px; height:58px; border-radius:16px; background:linear-gradient(135deg,#10b981,#38bdf8); color:#031914; font-weight:800; font-size:20px; display:grid; place-items:center;">EZ</div>
+      <div style="font-size:19px; font-weight:800; color:#f8fafc;">EZA PRO — ផ្ទៀងផ្ទាត់សិទ្ធិប្រើប្រាស់</div>
+      <div style="font-size:13px; color:var(--muted); line-height:1.55;">
+        សូមបញ្ចូល <strong>License Key</strong> ដែលទទួលបានពី Admin ដើម្បីបើកប្រើកម្មវិធីទាញយករឿង។
+      </div>
+      <div style="width:100%; background:#070c17; border:1px solid var(--border); border-radius:10px; padding:8px 12px; font-size:12px; color:#cbd5e1; display:flex; align-items:center; justify-content:space-between; gap:8px;">
+        <span>Machine ID: <code id="gateMachineIdText" style="color:#38bdf8; font-weight:700; font-family:var(--mono);">EZA-....</code></span>
+        <button id="btnCopyGateHwid" type="button" class="btn btn-xs">📋 ចម្លង ID</button>
+      </div>
+      <input
+        id="gateLicenseInput"
+        type="text"
+        placeholder="បញ្ចូល License Key (ឧ. EZAPRO-XXXX-...)"
+        autocomplete="off"
+        spellcheck="false"
+        style="width:100%; background:#080d19; border:1px solid var(--border); border-radius:11px; padding:12px 14px; color:#fff; font-size:14.5px; text-align:center; font-family:var(--mono); outline:none;"
+      />
+      <div id="gateErrorMsg" style="font-size:12.5px; color:#fca5a5; min-height:18px; line-height:1.45;"></div>
+      <a id="gateDownloadLink" href="#" target="_blank" rel="noopener noreferrer" style="display:none; font-size:12.5px; color:#38bdf8; font-weight:700; text-decoration:underline;">⬇️ ទាញយកកំណែ Update ថ្មី</a>
+      <button id="btnSubmitLicense" type="button" class="btn btn-primary" style="width:100%; min-height:46px; font-size:14.5px;">🔓 បើកចូលប្រើប្រាស់</button>
+    </div>
+  </div>
+
+  <div id="toastStack" class="toast-stack"></div>
+
+  <script>
+    (() => {
+      const HONGGUO_CATEGORIES = [
+        { id: 'trending', label: '🔥 ពេញនិយម' },
+        { id: 'romance', label: 'ស្នេហា' },
+        { id: 'ceo', label: 'លោកប្រធាន' },
+        { id: 'comeback', label: 'សងសឹក' },
+        { id: 'costume', label: 'បុរាណ' },
+        { id: 'sad', label: 'កម្សត់' }
+      ];
+
+      const DEFAULT_SOURCES = [
+        { id: 'hongguo', label: '🔥 HongGuo (红果)' },
+        { id: 'dramabox', label: '🎬 DramaBox' },
+        { id: 'reelshort', label: '🎭 ReelShort' },
+        { id: 'hema', label: '🦛 Hema (河马)' },
+        { id: 'xifan', label: '🍱 Xifan (西饭)' },
+        { id: 'social', label: '🌐 Social Video / Link' }
+      ];
+
+      const state = {
+        view: 'browse',
+        source: 'hongguo',
+        sources: DEFAULT_SOURCES,
+        categories: HONGGUO_CATEGORIES,
+        category: 'trending',
+        page: 1,
+        dramas: [],
+        matches: [],
+        searchQuery: '',
+        mode: 'catalog',
+        currentDrama: null,
+        downloaded: new Set(),
+        broken: new Set(),
+        lockedEps: new Set(),
+        selected: new Set(),
+        socialInfo: null,
+        socialSelectedIndices: new Set(),
+        jobs: [],
+        summary: { activeCount: 0, totalJobs: 0, totalCompleted: 0, totalQueued: 0, totalSpeedText: '0.0 MB/s' },
+        library: [],
+        vmFilter: 'all',
+        vmSearch: '',
+        multiSelect: false,
+        pickedDramas: new Map(),
+        expandedLogs: new Set(),
+        expandedLibEps: new Set(),
+        mergeCtx: null,
+        sse: null,
+        pollTimer: null,
+        previewEp: null,
+        playerCtx: null,
+        pendingDelete: null,
+        downloadDir: ''
+      };
+
+      const $ = (id) => document.getElementById(id);
+
+      function esc(s) {
+        return String(s || '')
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      }
+
+      function formatMb(mbVal) {
+        const mb = Number(mbVal || 0);
+        if (mb >= 1024) return `${(mb / 1024).toFixed(2)} GB`;
+        return `${mb.toFixed(1)} MB`;
+      }
+
+      function toast(msg, type = 'info') {
+        const el = document.createElement('div');
+        el.className = `toast ${type}`;
+        el.textContent = msg;
+        $('toastStack').appendChild(el);
+        setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.25s'; setTimeout(() => el.remove(), 260); }, 3400);
+      }
+
+      function setOverlay(show, msg = 'កំពុងទាញយកទិន្នន័យ...') {
+        $('loadingMsg').textContent = msg;
+        $('loadingOverlay').classList.toggle('show', !!show);
+      }
+
+      async function api(url, opts = {}) {
+        let res;
+        try {
+          res = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) }, ...opts });
+        } catch {
+          throw new Error('មិនអាចតភ្ជាប់ទៅ Server កម្មវិធីបានទេ — សូមពិនិត្យដំណើរការកម្មវិធី');
+        }
+        const text = await res.text();
+        let data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch { data = { error: text || `HTTP ${res.status}` }; }
+        if (!res.ok && !data.error) data.error = `HTTP ${res.status}`;
+        if (res.status === 403 && data && data.reason === 'license_required' && typeof showLicenseGate === 'function') {
+          showLicenseGate(data.error || '');
+        }
+        data._httpStatus = res.status;
+        data._ok = res.ok;
+        return data;
+      }
+
+      function getDramaJob(seriesId) {
+        if (!seriesId) return null;
+        const sid = String(seriesId);
+        const matches = state.jobs.filter((j) => String(j.seriesId || '') === sid);
+        if (!matches.length) return null;
+        return matches.find((j) => j.active) || matches[0];
+      }
+
+      function getJobForFolder(folder) {
+        if (!folder) return null;
+        const matches = state.jobs.filter((j) => j.folder === folder);
+        if (!matches.length) return null;
+        return matches.find((j) => j.active) || matches[0];
+      }
+
+      function currentDramaJob() {
+        return state.currentDrama ? getDramaJob(state.currentDrama.seriesId) : null;
+      }
+
+      function getLibraryItem(seriesId, title) {
+        const sid = String(seriesId || '');
+        if (sid) {
+          const byId = state.library.find((x) => x.seriesId && String(x.seriesId) === sid);
+          if (byId) return byId;
+        }
+        if (title) {
+          const byTitle = state.library.find((x) => x.title === title || x.folder === title);
+          if (byTitle) return byTitle;
+        }
+        return null;
+      }
+
+      function setView(v) {
+        if (v === 'drama' && !state.currentDrama) v = 'browse';
+        state.view = (v === 'drama' || v === 'manage') ? v : 'browse';
+        $('browseView').style.display = state.view === 'browse' ? 'block' : 'none';
+        $('dramaView').classList.toggle('show', state.view === 'drama');
+        $('manageView').classList.toggle('show', state.view === 'manage');
+
+        $('btnNavBrowse').classList.toggle('active', state.view === 'browse');
+        $('btnNavManage').classList.toggle('active', state.view === 'manage');
+        $('btnBackToRunning').style.display = (state.currentDrama && state.view !== 'drama') ? 'inline-flex' : 'none';
+
+        syncFloatingBars();
+        if (state.view === 'manage') loadLibrary();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+
+      function syncNavAndFloat() {
+        const activeJobs = state.jobs.filter((j) => j.active);
+        const activeCount = activeJobs.length;
+        const badge = $('navActiveBadge');
+        if (activeCount > 0) {
+          badge.style.display = 'inline-block';
+          badge.className = 'nav-badge running';
+          badge.textContent = String(activeCount);
+        } else if (state.library.length > 0) {
+          badge.style.display = 'inline-block';
+          badge.className = 'nav-badge';
+          badge.textContent = String(state.library.length);
+        } else {
+          badge.style.display = 'none';
+        }
+        syncFloatingBars();
+      }
+
+      function syncMultiSelectUi() {
+        const count = state.pickedDramas.size;
+        const onBrowse = state.view === 'browse';
+        const toggleBtn = $('btnMultiSelectMode');
+        if (state.multiSelect) {
+          toggleBtn.classList.add('active');
+          toggleBtn.textContent = count > 0 ? `✓ កំពុងរើស (${count} រឿង)` : '✓ កំពុងរើសច្រើន (ចុចរឿង)';
+        } else {
+          toggleBtn.classList.toggle('active', count > 0);
+          toggleBtn.textContent = count > 0 ? `☑️ បានរើស ${count} រឿង` : '☑️ រើសច្រើនរឿង';
+        }
+
+        const showMultiFloat = onBrowse && (state.multiSelect || count > 0);
+        $('multiSelFloat').classList.toggle('show', showMultiFloat);
+        $('multiSelLabel').textContent = count > 0 ? `បានរើស ${count} រឿង` : 'ចុចលើរឿងនីមួយៗ ដើម្បីរើស';
+        $('btnDownloadPicked').disabled = count === 0;
+        $('btnDownloadPicked').textContent = count > 0 ? `⬇️ ទាញយកទាំង ${count} រឿងព្រមគ្នា` : '⬇️ រើសរឿងជាមុនសិន';
+        $('chkMultiAutoMerge').checked = $('chkAutoMerge').checked;
+      }
+
+      function renderLiveDock() {
+        const activeJobs = state.jobs.filter((j) => j.active);
+        const showDock = state.view === 'browse' && activeJobs.length > 0;
+        $('liveDock').classList.toggle('show', showDock);
+        if (!showDock) return;
+
+        $('liveDockSummary').textContent = activeJobs.length === 1
+          ? `កំពុងទាញយក ១ រឿង • ${state.summary.totalSpeedText || '0.0 MB/s'}`
+          : `កំពុងទាញយក ${activeJobs.length} រឿងព្រមគ្នា • ${state.summary.totalSpeedText || '0.0 MB/s'}`;
+
+        const box = $('liveDockChips');
+        const fp = activeJobs.map((j) => j.jobId).join(',');
+        if (box.dataset.fp === fp) {
+          for (let i = 0; i < activeJobs.length; i += 1) {
+            const chip = box.children[i];
+            if (!chip) break;
+            const pct = Math.max(0, Math.min(100, Number(activeJobs[i].progress || 0)));
+            const pctEl = chip.querySelector('[data-role="pct"]');
+            const barEl = chip.querySelector('[data-role="bar"]');
+            if (pctEl) pctEl.textContent = `${pct}%`;
+            if (barEl) barEl.style.width = `${pct}%`;
+          }
+          return;
+        }
+
+        box.dataset.fp = fp;
+        box.innerHTML = activeJobs.map((j) => {
+          const pct = Math.max(0, Math.min(100, Number(j.progress || 0)));
+          const name = j.titleKhmer || j.title || j.folder || `Series ${j.seriesId}`;
+          return `
+            <div class="live-chip" data-dock-job="${esc(j.jobId)}">
+              <div class="live-chip-top">
+                <span class="live-chip-name" title="${esc(name)}">${esc(name)}</span>
+                <span class="live-chip-pct" data-role="pct">${pct}%</span>
+                <button type="button" class="live-chip-stop" data-dock-stop="${esc(j.jobId)}" title="បញ្ឈប់រឿងនេះ">⏹</button>
+              </div>
+              <div class="live-chip-bar"><div data-role="bar" style="width:${pct}%"></div></div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      function syncFloatingBars() {
+        const curJob = currentDramaJob();
+        const curActive = !!(curJob && curJob.active);
+        const showSel = state.view === 'drama' && state.selected.size > 0 && !curActive;
+        $('selFloat').classList.toggle('show', showSel);
+        if (showSel) $('selFloatLabel').textContent = `បានរើស ${state.selected.size} ភាគ`;
+
+        syncMultiSelectUi();
+        renderLiveDock();
+
+        const activeJobs = state.jobs.filter((j) => j.active);
+        const multiBarVisible = state.view === 'browse' && (state.multiSelect || state.pickedDramas.size > 0);
+        const showFloat = activeJobs.length > 0 && !multiBarVisible && (
+          (state.view === 'drama' && !(activeJobs.length === 1 && curActive)) ||
+          state.view === 'browse'
+        );
+        $('jobFloat').classList.toggle('show', showFloat);
+        if (showFloat) {
+          if (activeJobs.length === 1) {
+            const j = activeJobs[0];
+            $('jobFloatText').textContent = `កំពុងទាញ ${j.progress || 0}% (${j.completed}/${j.total || '?'}) • ${j.speedText || '0.0 MB/s'}`;
+          } else {
+            $('jobFloatText').textContent = `🚀 កំពុងទាញ ${activeJobs.length} រឿង • ${state.summary.totalSpeedText || '0.0 MB/s'}`;
+          }
+        }
+      }
+
+      // ================= BROWSE & SOURCES =================
+      function renderSources() {
+        const el = $('sourceRow');
+        if (!el) return;
+        el.innerHTML = state.sources.map((s) => `
+          <button type="button" class="source-pill ${s.id === 'social' ? 'social-tab ' : ''}${state.source === s.id ? 'active' : ''}" data-source="${esc(s.id)}">
+            ${esc(s.label)}
+          </button>
+        `).join('');
+      }
+
+      function renderCats() {
+        const list = state.source === 'hongguo' ? HONGGUO_CATEGORIES : state.categories;
+        $('catRow').innerHTML = list.map((c) => `
+          <button class="cat-pill ${state.mode === 'catalog' && state.category === c.id ? 'active' : ''}" data-cat="${esc(c.id)}">
+            ${esc(c.label || c.name || c.id)}
+          </button>
+        `).join('');
+        $('catRow').querySelectorAll('.cat-pill').forEach((b) => {
+          b.addEventListener('click', () => {
+            state.category = b.dataset.cat;
+            state.page = 1;
+            state.mode = 'catalog';
+            syncBrowseUi();
+            renderCats();
+            loadCatalog(false);
+          });
+        });
+      }
+
+      function syncBrowseUi() {
+        const isSocial = state.source === 'social';
+        const isSearch = !isSocial && state.mode === 'search';
+        $('searchHeader').classList.toggle('show', isSearch);
+        $('browseToolbar').style.display = isSocial ? 'none' : 'flex';
+        $('catRow').style.display = (isSearch || isSocial) ? 'none' : 'flex';
+        $('dramaGrid').style.display = isSocial ? 'none' : 'grid';
+        $('loadMoreWrap').style.display = (isSearch || isSocial) ? 'none' : 'flex';
+        $('socialPanel').classList.toggle('show', isSocial);
+        if (isSearch) $('searchHeaderText').textContent = `🔍 លទ្ធផល "${state.searchQuery}" (${state.matches.length} រឿង)`;
+      }
+
+      let catalogSeq = 0;
+
+      async function switchSource(srcId) {
+        state.source = srcId || 'hongguo';
+        state.page = 1;
+        state.mode = 'catalog';
+        catalogSeq += 1;
+        if ($('searchInput')) {
+          $('searchInput').placeholder = state.source === 'social'
+            ? 'បិទភ្ជាប់ Link TikTok / YouTube / Douyin / Facebook...'
+            : `វាយឈ្មោះរឿង (${state.source}) ឬ បិទភ្ជាប់ Link...`;
+        }
+        renderSources();
+        syncBrowseUi();
+        if (state.source === 'social') {
+          if ($('socialUrlInput')) $('socialUrlInput').focus();
+          return;
+        }
+        if (state.source === 'hongguo') {
+          state.categories = HONGGUO_CATEGORIES;
+          state.category = 'trending';
+          renderCats();
+          loadCatalog(false);
+          return;
+        }
+        state.category = '';
+        state.categories = [{ id: '', name: '🔥 ពេញនិយម' }];
+        renderCats();
+        loadCatalog(false);
+      }
+
+      function formatDurationShort(sec) {
+        const s = Math.max(0, Math.round(Number(sec) || 0));
+        if (!s) return '--:--';
+        const m = Math.floor(s / 60);
+        const rem = s % 60;
+        const h = Math.floor(m / 60);
+        if (h > 0) return `${h}:${String(m % 60).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
+        return `${m}:${String(rem).padStart(2, '0')}`;
+      }
+
+      function renderSocialResult() {
+        const info = state.socialInfo;
+        const box = $('socialResult');
+        if (!info) {
+          box.classList.remove('show');
+          return;
+        }
+        box.classList.add('show');
+        $('socialThumb').src = info.thumbnail || '';
+        $('socialPlatBadge').textContent = `${(info.platform && info.platform.icon) || '🌐'} ${(info.platform && info.platform.name) || 'Video'}`;
+        $('socialDurBadge').textContent = info.isPlaylist
+          ? `📚 Playlist (${info.playlistCount} វីដេអូ)`
+          : `⏱️ ${formatDurationShort(info.duration)}`;
+        $('socialTitle').textContent = info.title || info.url;
+        $('socialUploader').textContent = info.uploader ? `👤 ${info.uploader}` : info.url;
+
+        const plHeader = $('socialPlaylistHeader');
+        const plBox = $('socialPlaylistBox');
+        if (info.isPlaylist && Array.isArray(info.entries) && info.entries.length > 1) {
+          plHeader.style.display = 'flex';
+          plBox.classList.add('show');
+          if (state.socialSelectedIndices.size === 0) {
+            info.entries.forEach((e) => state.socialSelectedIndices.add(e.index));
+          }
+          $('socialPlaylistSummary').textContent = `បានរើស ${state.socialSelectedIndices.size}/${info.entries.length} វីដេអូ (EP001 → EP${String(info.entries.length).padStart(3, '0')})`;
+          plBox.innerHTML = info.entries.map((e) => `
+            <label class="social-pl-item">
+              <input type="checkbox" data-pl-idx="${e.index}" ${state.socialSelectedIndices.has(e.index) ? 'checked' : ''} />
+              <span class="mono" style="color:var(--muted);">#${String(e.index).padStart(2, '0')}</span>
+              <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(e.title)}</span>
+              <span class="mono" style="color:var(--muted);font-size:11px;">${esc(formatDurationShort(e.duration))}</span>
+            </label>
+          `).join('');
+        } else {
+          plHeader.style.display = 'none';
+          plBox.classList.remove('show');
+          plBox.innerHTML = '';
+        }
+      }
+
+      async function probeSocialUrl(rawUrl) {
+        const target = String(rawUrl || $('socialUrlInput').value || '').trim();
+        if (!target) { $('socialUrlInput').focus(); return; }
+        $('socialUrlInput').value = target;
+        const cookiesFromBrowser = $('socialCookieSelect') ? $('socialCookieSelect').value : '';
+        setOverlay(true, 'កំពុងវិភាគ Link វីដេអូ...');
+        try {
+          const r = await api('/api/ytdlp-probe', {
+            method: 'POST',
+            body: JSON.stringify({ url: target, cookiesFromBrowser })
+          });
+          if (!r.success || !r.socialInfo) {
+            toast(r.error || 'មិនអាចទាញព័ត៌មាន Link នេះបានទេ', 'err');
+            return;
+          }
+          state.socialInfo = r.socialInfo;
+          state.socialSelectedIndices = new Set();
+          renderSocialResult();
+          toast(`✓ រកឃើញវីដេអូពី ${(r.socialInfo.platform && r.socialInfo.platform.name) || 'Web'}!`, 'ok');
+        } catch (err) {
+          toast(err.message, 'err');
+        } finally {
+          setOverlay(false);
+        }
+      }
+
+      async function startSocialDownload() {
+        const info = state.socialInfo;
+        if (!info) return;
+        const qualityPreset = $('socialQualitySelect') ? $('socialQualitySelect').value : 'best';
+        const cookiesFromBrowser = $('socialCookieSelect') ? $('socialCookieSelect').value : '';
+        const useAria2 = $('socialUseAria2') ? $('socialUseAria2').checked : true;
+        const selectedIndices = info.isPlaylist ? Array.from(state.socialSelectedIndices).sort((a, b) => a - b) : null;
+        if (info.isPlaylist && (!selectedIndices || selectedIndices.length === 0)) {
+          toast('សូមជ្រើសរើសយ៉ាងតិច ១ វីដេអូក្នុង Playlist!', 'warn');
+          return;
+        }
+        try {
+          await ensureSSE();
+          const res = await api('/api/ytdlp-download', {
+            method: 'POST',
+            body: JSON.stringify({
+              url: info.url,
+              title: info.title,
+              cover: info.thumbnail,
+              platform: info.platform,
+              qualityPreset,
+              cookiesFromBrowser,
+              useAria2,
+              isPlaylist: !!info.isPlaylist,
+              selectedIndices,
+              totalItems: info.playlistCount || 1,
+            })
+          });
+          if (!res.success) { toast(res.error || 'មិនអាចចាប់ផ្តើមទាញយកបានទេ', 'err'); return; }
+          if (res.jobs) applyJobsPayload(res.jobs, res.summary);
+          startPolling();
+          toast(`🚀 កំពុងទាញ "${info.title}" — មើលក្នុង គ្រប់គ្រងវីដេអូ!`, 'ok');
+        } catch (err) {
+          toast(err.message, 'err');
+        }
+      }
+
+      async function loadCatalog(append = false) {
+        if (state.source === 'social') return;
+        const reqSeq = ++catalogSeq;
+        const reqSource = state.source;
+        if (!append) {
+          $('dramaGrid').innerHTML = `<div style="grid-column:1/-1;padding:64px;text-align:center;color:var(--muted);"><div class="spinner" style="margin:0 auto 12px;"></div>កំពុងផ្ទុករឿង...</div>`;
+        } else {
+          $('btnLoadMore').disabled = true;
+          $('btnLoadMore').textContent = 'កំពុងផ្ទុក...';
+        }
+        try {
+          const catParam = state.category || (reqSource === 'hongguo' ? 'trending' : '');
+          const data = await api(`/api/catalog?source=${encodeURIComponent(reqSource)}&category=${encodeURIComponent(catParam)}&page=${state.page}`);
+          if (reqSeq !== catalogSeq || state.source !== reqSource || state.mode !== 'catalog') return;
+          if (reqSource !== 'hongguo' && Array.isArray(data.categories) && data.categories.length) {
+            state.categories = data.categories;
+            renderCats();
+          }
+          if (data.error && !append && (!data.dramas || !data.dramas.length)) {
+            toast(data.error, 'warn');
+          }
+          const list = Array.isArray(data.dramas) ? data.dramas : [];
+          if (append) {
+            const seen = new Set(state.dramas.map((d) => String(d.id)));
+            for (const x of list) if (!seen.has(String(x.id))) state.dramas.push(x);
+          } else {
+            state.dramas = list;
+          }
+          renderDramaGrid();
+        } catch (err) {
+          if (reqSeq === catalogSeq) toast(err.message, 'err');
+        } finally {
+          if (reqSeq === catalogSeq) {
+            $('btnLoadMore').disabled = false;
+            $('btnLoadMore').textContent = 'មើលរឿងបន្ថែមទៀត';
+          }
+        }
+      }
+
+      function buildStartDownloadPayload(d, selectedEps) {
+        return {
+          seriesId: d.seriesId || d.id,
+          selectedEps,
+          title: d.title,
+          titleKhmer: d.titleKhmer,
+          cover: d.cover,
+          total: Number(d.total) || 0,
+          autoMerge: $('chkAutoMerge').checked,
+          workers: Number($('workersSelect').value) || 8,
+          qualityMode: $('qualitySelect').value || 'fast'
+        };
+      }
+
+      function getDramaPayloadFromCard(card) {
+        return {
+          id: card.dataset.id,
+          title: card.dataset.title,
+          titleKhmer: card.dataset.khmer,
+          cover: card.dataset.cover,
+          total: Number(card.dataset.total) || 0
+        };
+      }
+
+      function getDramaCardState(d) {
+        const sid = String(d.id || d.seriesId || '');
+        const activeJob = getDramaJob(sid);
+        const libItem = getLibraryItem(sid, d.title);
+        const isRunning = !!(activeJob && activeJob.active);
+        const isPicked = state.pickedDramas.has(sid);
+        const expected = Number(d.total) || Number(libItem && libItem.expectedTotal) || 0;
+        const doneCnt = libItem ? Number(libItem.downloadedCount || 0) : 0;
+
+        let pillClass = '';
+        let pillText = '';
+        let btnClass = 'poster-dl-btn';
+        let btnText = '⬇️ ទាញយក';
+
+        if (isRunning) {
+          const pct = Math.max(0, Math.min(100, Number(activeJob.progress || 0)));
+          pillClass = 'active';
+          pillText = `⏳ ${pct}%`;
+          btnClass = 'poster-dl-btn is-active';
+          btnText = `⏳ ${pct}% • មើល`;
+        } else if (doneCnt > 0 && expected > 0 && doneCnt < expected) {
+          pillClass = 'saved';
+          pillText = `✓ ${doneCnt}/${expected}`;
+          btnText = `⬇️ ទាញបន្ថែម (${doneCnt}/${expected})`;
+        } else if (doneCnt > 0) {
+          pillClass = 'saved';
+          pillText = `✓ ${doneCnt}`;
+          btnClass = 'poster-dl-btn is-done';
+          btnText = `✅ រួចរាល់ (${doneCnt})`;
+        }
+
+        return { sid, isRunning, isPicked, pillClass, pillText, btnClass, btnText };
+      }
+
+      function toggleDramaPick(drama) {
+        const sid = String(drama.id || '');
+        if (!sid) return;
+        const activeJob = getDramaJob(sid);
+        if (activeJob && activeJob.active) {
+          toast('រឿងនេះកំពុងទាញយករួចហើយ', 'warn');
+          return;
+        }
+        if (state.pickedDramas.has(sid)) state.pickedDramas.delete(sid);
+        else state.pickedDramas.set(sid, drama);
+        patchBrowseCardStatuses();
+        syncFloatingBars();
+      }
+
+      function patchBrowseCardStatuses() {
+        const cards = $('dramaGrid').querySelectorAll('.poster-card');
+        if (!cards.length) return;
+        cards.forEach((card) => {
+          const cs = getDramaCardState(getDramaPayloadFromCard(card));
+          card.classList.toggle('is-picked', cs.isPicked);
+          const chk = card.querySelector('[data-card-pick]');
+          if (chk) {
+            chk.textContent = cs.isPicked ? '✓' : '☐';
+            chk.setAttribute('aria-pressed', cs.isPicked ? 'true' : 'false');
+          }
+          const pill = card.querySelector('[data-role="pill"]');
+          if (pill) {
+            pill.className = `poster-status-pill${cs.pillClass ? ' ' + cs.pillClass : ''}`;
+            pill.textContent = cs.pillText;
+            pill.style.display = cs.pillText ? 'inline-block' : 'none';
+          }
+          const dlBtn = card.querySelector('[data-card-dl]');
+          if (dlBtn) {
+            dlBtn.className = cs.btnClass;
+            dlBtn.textContent = cs.btnText;
+            dlBtn.title = cs.isRunning ? 'កំពុងទាញយក — ចុចមើល Video Management' : 'ទាញយករឿងនេះភ្លាម';
+          }
+        });
+      }
+
+      function renderDramaGrid() {
+        const list = state.mode === 'search' ? state.matches : state.dramas;
+        if (!list.length) {
+          $('dramaGrid').innerHTML = `<div style="grid-column:1/-1;padding:64px;text-align:center;color:var(--muted);">រកមិនឃើញរឿងទេ</div>`;
+          return;
+        }
+        $('dramaGrid').innerHTML = list.map((d) => {
+          const cs = getDramaCardState(d);
+          const showSrcTag = d.source && d.source !== 'hongguo' && state.source !== d.source;
+          return `
+            <div class="poster-card ${cs.isPicked ? 'is-picked' : ''}" role="button" tabindex="0" data-id="${esc(d.id)}" data-title="${esc(d.title)}" data-khmer="${esc(d.titleKhmer || '')}" data-cover="${esc(d.cover || '')}" data-total="${esc(d.total || 0)}">
+              <div class="poster-img-box">
+                <img src="${esc(d.cover || '')}" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.opacity='0.2'" alt="" />
+                <span class="poster-status-pill${cs.pillClass ? ' ' + cs.pillClass : ''}" data-role="pill" style="display:${cs.pillText ? 'inline-block' : 'none'}">${esc(cs.pillText)}</span>
+                ${showSrcTag ? `<span class="poster-src-tag">${esc(d.source)}</span>` : ''}
+                <button type="button" class="poster-pick-chk" data-card-pick="${esc(d.id)}" aria-pressed="${cs.isPicked ? 'true' : 'false'}" title="រើសរឿងនេះដើម្បីទាញព្រមគ្នាច្រើនរឿង">${cs.isPicked ? '✓' : '☐'}</button>
+                ${d.total ? `<span class="poster-ep-badge">${esc(d.total)} ភាគ</span>` : ''}
+              </div>
+              <div class="poster-title">${esc(d.titleKhmer || d.title || `Series ${d.id}`)}</div>
+              <button type="button" class="${cs.btnClass}" data-card-dl="${esc(d.id)}" title="${cs.isRunning ? 'កំពុងទាញយក — ចុចមើល Video Management' : 'ទាញយករឿងនេះភ្លាម'}">${esc(cs.btnText)}</button>
+            </div>
+          `;
+        }).join('');
+      }
+
+      async function quickDownloadDrama(d) {
+        const existing = getDramaJob(d.id);
+        if (existing && existing.active) {
+          setView('manage');
+          return;
+        }
+        try {
+          await ensureSSE();
+          const res = await api('/api/start-download', {
+            method: 'POST',
+            body: JSON.stringify(buildStartDownloadPayload(d, 'all'))
+          });
+          if (!res.success) { toast(res.error || 'មិនអាចចាប់ផ្តើមបានទេ', 'err'); return; }
+          state.pickedDramas.delete(String(d.id));
+          if (res.jobs) applyJobsPayload(res.jobs, res.summary);
+          const activeCnt = res.summary ? res.summary.activeCount : 1;
+          toast(`🚀 កំពុងទាញ "${d.titleKhmer || d.title}" (${activeCnt} រឿងព្រមគ្នា)`, 'ok');
+          startPolling();
+        } catch (err) {
+          toast(err.message || 'មានបញ្ហាតភ្ជាប់ Server', 'err');
+        }
+      }
+
+      async function downloadPickedDramas() {
+        const items = Array.from(state.pickedDramas.values());
+        if (!items.length) return;
+        const btn = $('btnDownloadPicked');
+        btn.disabled = true;
+        btn.textContent = '⏳ កំពុងចាប់ផ្តើម...';
+        try {
+          await ensureSSE();
+          let started = 0;
+          let failed = 0;
+          let lastRes = null;
+          for (let i = 0; i < items.length; i += 4) {
+            const chunk = items.slice(i, i + 4);
+            const settled = await Promise.allSettled(chunk.map((d) =>
+              api('/api/start-download', {
+                method: 'POST',
+                body: JSON.stringify(buildStartDownloadPayload(d, 'all'))
+              }).then((r) => ({ d, r }))
+            ));
+            for (const entry of settled) {
+              if (entry.status === 'fulfilled' && entry.value.r && entry.value.r.success) {
+                started += 1;
+                state.pickedDramas.delete(String(entry.value.d.id));
+                lastRes = entry.value.r;
+              } else {
+                failed += 1;
+              }
+            }
+          }
+          if (lastRes && lastRes.jobs) applyJobsPayload(lastRes.jobs, lastRes.summary);
+          startPolling();
+          if (started > 0) {
+            state.multiSelect = false;
+            patchBrowseCardStatuses();
+            syncFloatingBars();
+            toast(`🚀 បានចាប់ផ្តើមទាញយក ${started} រឿងព្រមគ្នា!${failed ? ` (បរាជ័យ ${failed})` : ''}`, failed ? 'warn' : 'ok');
+          } else {
+            toast('❌ មិនអាចចាប់ផ្តើមទាញយករឿងទាំងនេះបានទេ', 'err');
+          }
+        } catch (err) {
+          toast(err.message || 'មានបញ្ហាតភ្ជាប់ Server', 'err');
+        } finally {
+          syncMultiSelectUi();
+        }
+      }
+
+      async function doSearch() {
+        const input = $('searchInput').value.trim();
+        if (!input) { $('searchInput').focus(); return; }
+        const cookiesFromBrowser = $('socialCookieSelect') ? $('socialCookieSelect').value : '';
+        setOverlay(true, 'កំពុងស្វែងរក / វិភាគ Link...');
+        try {
+          const data = await api('/api/resolve', {
+            method: 'POST',
+            body: JSON.stringify({ input, source: state.source, cookiesFromBrowser })
+          });
+          if (!data.success) { toast(data.error || 'រកមិនឃើញរឿងនេះទេ', 'err'); setOverlay(false); return; }
+          if (data.isSocial && data.socialInfo) {
+            state.source = 'social';
+            state.socialInfo = data.socialInfo;
+            state.socialSelectedIndices = new Set();
+            renderSources();
+            syncBrowseUi();
+            $('socialUrlInput').value = input;
+            renderSocialResult();
+            setView('browse');
+            setOverlay(false);
+            return;
+          }
+          if (state.source === 'social') {
+            state.source = data.source || 'hongguo';
+            renderSources();
+          }
+          if (Array.isArray(data.matches) && data.matches.length > 1) {
+            state.matches = data.matches;
+            state.searchQuery = input;
+            state.mode = 'search';
+            syncBrowseUi();
+            renderCats();
+            renderDramaGrid();
+            setView('browse');
+            setOverlay(false);
+            return;
+          }
+          if (data.seriesId) await openDrama(data.seriesId, { title: data.title, titleKhmer: data.titleKhmer, cover: data.cover }, true);
+          else setOverlay(false);
+        } catch (err) {
+          toast(err.message, 'err');
+          setOverlay(false);
+        }
+      }
+
+      // ================= DRAMA SCREEN =================
+      async function openDrama(seriesId, hint = {}, force = false, switchScreen = true) {
+        if (!seriesId) return;
+        setOverlay(true, 'កំពុងបើករឿង...');
+        try {
+          const data = await api(`/api/scanned-episodes?seriesId=${encodeURIComponent(seriesId)}&force=${force ? 1 : 0}`);
+          if (!data.success) { toast(data.error || 'មិនអាចបើករឿងនេះបានទេ', 'err'); return; }
+          const same = state.currentDrama && String(state.currentDrama.seriesId) === String(data.seriesId);
+          state.currentDrama = {
+            seriesId: String(data.seriesId),
+            source: data.source || 'hongguo',
+            title: data.title || hint.title || `Series ${data.seriesId}`,
+            titleKhmer: data.titleKhmer || hint.titleKhmer || (same ? state.currentDrama.titleKhmer : ''),
+            cover: data.cover || hint.cover || '',
+            total: Number(data.total || 0),
+            freeCount: Number(data.freeCount ?? data.total ?? 0),
+            hasMerged: !!data.hasMerged,
+            mergedMovies: Array.isArray(data.mergedMovies) ? data.mergedMovies : []
+          };
+          state.downloaded = new Set(data.downloaded || []);
+          state.broken = new Set(data.broken || []);
+          state.lockedEps = new Set(data.lockedEps || []);
+          if (!same) {
+            state.selected.clear();
+            $('rangeFrom').value = 1;
+            $('rangeTo').value = Math.min(20, Math.max(1, state.currentDrama.total));
+          }
+          renderHero();
+          renderEpisodes();
+          renderDramaProgressBox();
+          syncButtons();
+          if (switchScreen) setView('drama');
+        } catch (err) {
+          toast(err.message, 'err');
+        } finally {
+          setOverlay(false);
+        }
+      }
+
+      function liveState(ep) {
+        const s = currentDramaJob();
+        if (s && s.episodes && s.episodes[ep]) return s.episodes[ep];
+        return null;
+      }
+
+      function missingList() {
+        if (!state.currentDrama) return [];
+        const out = [];
+        for (let ep = 1; ep <= state.currentDrama.total; ep++) {
+          if (state.lockedEps.has(ep)) continue;
+          const l = liveState(ep);
+          if (!(l ? l.status === 'done' : state.downloaded.has(ep))) out.push(ep);
+        }
+        return out;
+      }
+
+      function failedList() {
+        if (!state.currentDrama) return [];
+        const s = new Set(state.broken);
+        const snap = currentDramaJob();
+        if (snap) {
+          for (const [k, v] of Object.entries(snap.episodes || {})) if (v && v.status === 'error') s.add(Number(k));
+          for (const item of snap.failedList || []) if (item && item.ep) s.add(Number(item.ep));
+        }
+        return Array.from(s).filter((n) => n >= 1 && n <= state.currentDrama.total).sort((a, b) => a - b);
+      }
+
+      function countReadyEpisodes() {
+        const d = state.currentDrama;
+        if (!d) return 0;
+        let done = 0;
+        for (let ep = 1; ep <= d.total; ep++) {
+          const l = liveState(ep);
+          if (l ? l.status === 'done' : state.downloaded.has(ep)) done++;
+        }
+        return done;
+      }
+
+      function renderHero() {
+        const d = state.currentDrama;
+        if (!d) return;
+        $('heroCover').src = d.cover || '';
+        $('heroTitle').textContent = d.titleKhmer ? `${d.titleKhmer} (${d.title})` : d.title;
+        const done = countReadyEpisodes();
+        const freeTotal = Math.max(done, d.total - state.lockedEps.size);
+        const left = Math.max(0, freeTotal - done);
+        const lockNote = state.lockedEps.size > 0 ? ` &nbsp;•&nbsp; 🔒 VIP <strong>${state.lockedEps.size}</strong>` : '';
+        const srcBadge = d.source && d.source !== 'hongguo' ? ` <span class="vm-badge" style="margin-left:6px;text-transform:uppercase;">${esc(d.source)}</span>` : '';
+        $('heroStats').innerHTML = `សរុប <strong>${d.total}</strong> ភាគ &nbsp;•&nbsp; រួចរាល់ <strong style="color:var(--green)">${done}</strong> &nbsp;•&nbsp; ឥតគិតថ្លៃនៅសល់ <strong>${left}</strong>${lockNote}${d.hasMerged ? ' &nbsp;•&nbsp; <strong style="color:var(--green)">មានរឿងពេញហើយ ✓</strong>' : ''}${srcBadge}`;
+        $('epCountLabel').textContent = `${done}/${d.total}`;
+      }
+
+      function syncButtons() {
+        const d = state.currentDrama;
+        const curJob = currentDramaJob();
+        const active = !!(curJob && curJob.active);
+        const missing = missingList();
+        const failed = failedList();
+        const readyCount = countReadyEpisodes();
+
+        $('btnDownloadAll').style.display = active ? 'none' : 'inline-flex';
+        $('btnDownloadAll').disabled = !d || missing.length === 0;
+        const allLockedVip = !!(d && d.total > 0 && state.lockedEps.size >= d.total && readyCount === 0);
+        const freeTotal = d ? Math.max(0, d.total - state.lockedEps.size) : 0;
+        $('btnDownloadAll').textContent = allLockedVip
+          ? '🔒 គ្រប់ភាគជាប់សោ VIP'
+          : (missing.length === 0
+              ? '✅ ទាញយកគ្រប់ភាគឥតគិតថ្លៃរួចរាល់'
+              : (missing.length === freeTotal ? `⬇️ ទាញយកទាំងអស់ (${missing.length} ភាគ)` : `⬇️ ទាញយកភាគនៅសល់ (${missing.length} ភាគ)`));
+
+        $('btnRetryFailed').style.display = (!active && failed.length > 0 && missing.length < (d ? d.total : 0)) ? 'inline-flex' : 'none';
+        $('btnRetryFailed').textContent = `🔄 ទាញភាគបរាជ័យឡើងវិញ (${failed.length})`;
+        $('btnStop').style.display = active ? 'inline-flex' : 'none';
+
+        $('btnMerge').disabled = active || !d;
+        $('btnMerge').classList.toggle('btn-muted', !active && !!d && readyCount < 2);
+        $('btnMerge').textContent = readyCount >= 2
+          ? `🎞️ ផ្គុំជា ១ វីដេអូ (${readyCount} ភាគ)`
+          : '🎞️ ផ្គុំជា ១ វីដេអូ (ត្រូវការ ≥២ ភាគ)';
+        $('btnPlayFull').style.display = (!active && d && d.hasMerged) ? 'inline-flex' : 'none';
+        syncFloatingBars();
+      }
+
+      function renderDramaProgressBox() {
+        const snap = currentDramaJob();
+        if (!snap || !(snap.total > 0 || snap.active || snap.status !== 'idle')) {
+          $('progBox').classList.remove('show');
+          return;
+        }
+        const isMerge = snap.mode === 'merge' || snap.speedText === 'FFmpeg Merge';
+        $('progBox').classList.add('show');
+        $('progTitle').textContent = snap.message || 'កំពុងដំណើរការ...';
+        const pct = Math.max(0, Math.min(100, Number(snap.progress || 0)));
+        $('progStats').textContent = isMerge
+          ? `${pct}% • ${snap.total} ភាគ • ផ្គុំវីដេអូ`
+          : `${pct}% • ${snap.completed}/${snap.total} • ${snap.speedText || '0.0 MB/s'}`;
+        $('barFg').style.width = `${pct}%`;
+        $('barFg').classList.toggle('warn', (snap.failed || 0) > 0);
+        $('logsBox').textContent = (snap.logs || []).join('\n');
+
+        const fl = Array.isArray(snap.failedList) ? snap.failedList : [];
+        $('progErrorBar').classList.toggle('show', fl.length > 0 && !snap.active);
+        if (fl.length > 0) $('progErrorText').textContent = `មាន ${fl.length} ភាគមិនទាន់បានទាញ (${fl.map((x) => x.ep).join(', ')})`;
+      }
+
+      function renderEpisodes() {
+        const d = state.currentDrama;
+        if (!d) return;
+        const html = [];
+        for (let ep = 1; ep <= d.total; ep++) {
+          const l = liveState(ep);
+          const isLocked = state.lockedEps.has(ep);
+          const isBroken = state.broken.has(ep);
+          const st = l ? l.status : (state.downloaded.has(ep) ? 'done' : (isLocked ? 'locked' : (isBroken ? 'broken' : 'pending')));
+          const sel = state.selected.has(ep);
+          const pct = l && Number.isFinite(l.percent) ? l.percent : 0;
+
+          let sub = '';
+          if (st === 'done') sub = '▶';
+          else if (st === 'locked') sub = '🔒';
+          else if (st === 'downloading') sub = `${pct}%`;
+          else if (st === 'transcoding') sub = `⚙️${pct}%`;
+          else if (st === 'resolving' || st === 'queued') sub = '...';
+          else if (st === 'error') sub = '!';
+
+          html.push(`
+            <button class="ep-btn ${st} ${sel ? 'selected' : ''}" data-ep="${ep}" data-st="${st}" title="${st === 'locked' ? `ភាគ ${ep} (ជាប់សោ VIP)` : `ភាគ ${ep}`}">
+              <span>${ep}</span>
+              ${sub ? `<small>${sub}</small>` : ''}
+              ${(st === 'downloading' || st === 'transcoding') ? `<span class="pbar" style="width:${pct}%"></span>` : ''}
+            </button>
+          `);
+        }
+        $('epGrid').innerHTML = html.join('');
+        $('epGrid').querySelectorAll('.ep-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const ep = Number(btn.dataset.ep);
+            if (btn.dataset.st === 'done') { openVideo(ep); return; }
+            if (btn.dataset.st === 'locked') {
+              toast(`🔒 ភាគ ${ep} ជាប់សោ VIP លើវេទិកាដើម — ទាញបានតែភាគឥតគិតថ្លៃ`, 'warn');
+              return;
+            }
+            if (state.selected.has(ep)) state.selected.delete(ep);
+            else state.selected.add(ep);
+            renderEpisodes();
+            syncFloatingBars();
+          });
+          btn.addEventListener('dblclick', () => {
+            const ep = Number(btn.dataset.ep);
+            if (btn.dataset.st !== 'done') startDownload([ep]);
+          });
+        });
+      }
+
+      // ================= VIDEO MANAGEMENT VIEW =================
+      async function loadLibrary(silent = false) {
+        try {
+          const d = await api('/api/library');
+          if (!d || !d.success) return;
+          state.library = Array.isArray(d.items) ? d.items : [];
+          if (Array.isArray(d.jobs)) {
+            state.jobs = d.jobs;
+            if (d.summary) state.summary = d.summary;
+          }
+          if (d.downloadDir) {
+            state.downloadDir = d.downloadDir;
+            $('vmPathLabel').textContent = d.downloadDir;
+            $('savePathLabel').textContent = d.downloadDir;
+          }
+          syncNavAndFloat();
+          if (state.view === 'browse') patchBrowseCardStatuses();
+          if (state.view === 'manage') renderManage();
+        } catch (err) {
+          if (!silent) toast(err.message, 'err');
+        }
+      }
+
+      function jobStatusMeta(j) {
+        if (j.mode === 'merge' && j.active) return { cls: 'active', label: `🎞️ កំពុងផ្គុំ ${j.progress || 0}%` };
+        if (j.status === 'starting') return { cls: 'active', label: '⏳ កំពុងរៀបចំ...' };
+        if (j.status === 'running') return { cls: 'active', label: `⬇️ កំពុងទាញ ${j.progress || 0}%` };
+        if (j.status === 'retrying') return { cls: 'warn', label: `🔄 សាកឡើងវិញ ${j.progress || 0}%` };
+        if (j.status === 'merging') return { cls: 'active', label: `🎞️ កំពុងផ្គុំ ${j.progress || 0}%` };
+        if (j.status === 'done') return { cls: 'done', label: '✅ រួចរាល់ ១០០%' };
+        if (j.status === 'partial') return { cls: 'warn', label: `⚠️ បរាជ័យ ${j.failed || 0} ភាគ` };
+        if (j.status === 'cancelled') return { cls: 'warn', label: '🛑 បានផ្អាក' };
+        if (j.status === 'error') return { cls: 'err', label: '❌ បរាជ័យ' };
+        return { cls: '', label: j.status || 'រួចរាល់' };
+      }
+
+      function buildManageJobViewModel(j) {
+        const st = jobStatusMeta(j);
+        const pct = Math.max(0, Math.min(100, Number(j.progress || 0)));
+        const isMerge = j.mode === 'merge' || j.speedText === 'FFmpeg Merge';
+        const titleShow = j.titleKhmer ? `${j.titleKhmer}` : (j.title || j.folder || `Series ${j.seriesId}`);
+        const subShow = j.titleKhmer && j.title ? j.title : '';
+        const logsOpen = state.expandedLogs.has(String(j.jobId));
+        const etaText = (j.active && j.etaSec > 0 && !isMerge) ? ` • នៅសល់ ~${j.etaSec}s` : '';
+        const statsRight = isMerge
+          ? `${pct}% • ${j.total} ភាគ`
+          : `${j.completed}/${j.total || '?'} ភាគ • ${j.speedText || '0.0 MB/s'} • ${j.downloadedMb || '0.0'} MB${etaText}`;
+        const failEps = Array.isArray(j.failedList) ? j.failedList.map((x) => x.ep).filter(Boolean) : [];
+        const cardTone = j.active ? 'is-active' : (j.status === 'done' ? 'is-done' : (j.status === 'error' || j.status === 'partial' ? 'is-partial' : ''));
+        const structKey = `${j.jobId}|${j.active ? 1 : 0}|${j.status}|${failEps.length}|${j.folder || ''}|${j.total || 0}|${logsOpen ? 1 : 0}`;
+        return { st, pct, titleShow, subShow, logsOpen, statsRight, failEps, cardTone, structKey };
+      }
+
+      function patchManageJobsInPlace(jobsEl, filteredJobs, models) {
+        for (let i = 0; i < filteredJobs.length; i += 1) {
+          const j = filteredJobs[i];
+          const m = models[i];
+          const card = jobsEl.children[i];
+          if (!card) return false;
+          card.className = `vm-job-card ${m.cardTone}`;
+          const badge = card.querySelector('[data-role="badge"]');
+          if (badge) {
+            badge.className = `vm-badge ${m.st.cls}`;
+            badge.textContent = m.st.label;
+          }
+          const bar = card.querySelector('[data-role="bar"]');
+          if (bar) {
+            bar.className = `bar-fg ${j.failed > 0 ? 'warn' : ''}`;
+            bar.style.width = `${m.pct}%`;
+          }
+          const msg = card.querySelector('[data-role="msg"]');
+          if (msg) msg.textContent = j.message || '';
+          const stats = card.querySelector('[data-role="stats"]');
+          if (stats) stats.textContent = m.statsRight;
+          const logs = card.querySelector('[data-role="logs"]');
+          if (logs) logs.textContent = (j.logs || []).join('\n') || '...';
+        }
+        return true;
+      }
+
+      function analyzeEpisodeSequence(eps) {
+        const sorted = Array.from(new Set((eps || []).map(Number).filter((n) => Number.isInteger(n) && n >= 1))).sort((a, b) => a - b);
+        if (!sorted.length) return { sorted: [], firstEp: 0, lastEp: 0, rangeText: '', gaps: [] };
+        const firstEp = sorted[0];
+        const lastEp = sorted[sorted.length - 1];
+        const set = new Set(sorted);
+        const gaps = [];
+        for (let e = firstEp; e <= lastEp; e += 1) {
+          if (!set.has(e)) gaps.push(e);
+        }
+        return {
+          sorted,
+          firstEp,
+          lastEp,
+          rangeText: firstEp === lastEp ? `EP${firstEp}` : `EP${firstEp} → EP${lastEp}`,
+          gaps
+        };
+      }
+
+      function renderManage() {
+        const q = state.vmSearch.trim().toLowerCase();
+        const activeJobs = state.jobs.filter((j) => j.active);
+        const finishedJobs = state.jobs.filter((j) => !j.active);
+
+        $('vmCountActive').textContent = String(state.jobs.length);
+        $('vmCountLibrary').textContent = String(state.library.length);
+        $('btnStopAllJobs').style.display = activeJobs.length > 0 ? 'inline-flex' : 'none';
+        $('btnClearFinishedJobs').style.display = finishedJobs.length > 0 ? 'inline-flex' : 'none';
+
+        const pill = $('vmLivePill');
+        if (activeJobs.length > 0) {
+          pill.classList.add('show');
+          pill.textContent = `កំពុងទាញ ${activeJobs.length} រឿងព្រមគ្នា • ${state.summary.totalSpeedText || '0.0 MB/s'}`;
+        } else {
+          pill.classList.remove('show');
+        }
+
+        const filteredJobs = state.jobs.filter((j) => {
+          if (state.vmFilter === 'library') return false;
+          if (!q) return true;
+          return `${j.title || ''} ${j.titleKhmer || ''} ${j.folder || ''}`.toLowerCase().includes(q);
+        });
+
+        const showJobsSec = state.vmFilter !== 'library' && filteredJobs.length > 0;
+        $('vmJobsSection').style.display = showJobsSec ? 'block' : 'none';
+
+        const jobsEl = $('vmJobsList');
+        if (showJobsSec) {
+          const models = filteredJobs.map(buildManageJobViewModel);
+          const jobsFp = models.map((m) => m.structKey).join(';');
+          if (jobsEl.dataset.fp !== jobsFp || !patchManageJobsInPlace(jobsEl, filteredJobs, models)) {
+            jobsEl.dataset.fp = jobsFp;
+            jobsEl.innerHTML = filteredJobs.map((j, idx) => {
+              const m = models[idx];
+              return `
+                <div class="vm-job-card ${m.cardTone}" data-job-id="${esc(j.jobId)}">
+                  <div class="vm-thumb">
+                    ${j.cover ? `<img src="${esc(j.cover)}" referrerpolicy="no-referrer" alt="" />` : '🎬'}
+                  </div>
+                  <div class="vm-card-body">
+                    <div class="vm-card-top">
+                      <div>
+                        <div class="vm-card-title">${esc(m.titleShow)}</div>
+                        ${m.subShow ? `<div class="vm-card-sub">${esc(m.subShow)}</div>` : ''}
+                      </div>
+                      <span class="vm-badge ${m.st.cls}" data-role="badge">${esc(m.st.label)}</span>
+                    </div>
+
+                    <div class="bar-bg"><div class="bar-fg ${j.failed > 0 ? 'warn' : ''}" data-role="bar" style="width:${m.pct}%"></div></div>
+
+                    <div class="vm-stats">
+                      <span data-role="msg">${esc(j.message || '')}</span>
+                      <span class="mono" data-role="stats">${esc(m.statsRight)}</span>
+                    </div>
+
+                    <div class="vm-actions">
+                      ${j.folder ? `<button class="btn btn-xs" data-act="watch-folder" data-folder="${esc(j.folder)}" data-sid="${esc(j.seriesId)}" data-title="${esc(m.titleShow)}">▶️ មើល</button>` : ''}
+                      ${j.seriesId ? `<button class="btn btn-xs" data-act="open-drama" data-sid="${esc(j.seriesId)}" data-title="${esc(j.title)}" data-khmer="${esc(j.titleKhmer)}" data-cover="${esc(j.cover)}">📋 ភាគ (${j.total || '?'})</button>` : ''}
+                      ${!j.active && m.failEps.length > 0 && j.seriesId ? `<button class="btn btn-amber btn-xs" data-act="retry-job" data-sid="${esc(j.seriesId)}" data-eps="${esc(m.failEps.join(','))}">🔄 ទាញភាគបរាជ័យ (${m.failEps.length})</button>` : ''}
+                      ${j.folder ? `<button class="btn btn-xs" data-act="open-folder" data-folder="${esc(j.folder)}">📂 ថត</button>` : ''}
+                      <button class="btn btn-ghost btn-xs" data-act="toggle-log" data-job-id="${esc(j.jobId)}">${m.logsOpen ? 'លម្អិត ▴' : 'លម្អិត ▾'}</button>
+                      ${j.active
+                        ? `<button class="btn btn-danger btn-xs" data-act="stop-job" data-job-id="${esc(j.jobId)}">⏹️ បញ្ឈប់</button>`
+                        : `<button class="btn btn-ghost btn-xs" data-act="dismiss-job" data-job-id="${esc(j.jobId)}" title="ដកចេញពីបញ្ជី">✖️</button>`
+                      }
+                    </div>
+
+                    <div class="logs-box ${m.logsOpen ? 'show' : ''}" data-role="logs">${esc((j.logs || []).join('\n') || '...')}</div>
+                  </div>
+                </div>
+              `;
+            }).join('');
+          }
+        } else if (jobsEl.dataset.fp) {
+          jobsEl.dataset.fp = '';
+          jobsEl.innerHTML = '';
+        }
+
+        const filteredLib = state.library.filter((item) => {
+          if (state.vmFilter === 'active') return false;
+          if (!q) return true;
+          return `${item.folder || ''} ${item.title || ''} ${item.titleKhmer || ''}`.toLowerCase().includes(q);
+        });
+
+        const showLibSec = state.vmFilter !== 'active';
+        $('vmLibSection').style.display = showLibSec ? 'block' : 'none';
+        if (showLibSec) {
+          const totalAllMb = filteredLib.reduce((acc, it) => acc + Number(it.combinedSizeMb || 0), 0);
+          $('vmLibSummary').textContent = filteredLib.length
+            ? `សរុប ${filteredLib.length} រឿង • ${formatMb(totalAllMb)}`
+            : '';
+
+          const libGrid = $('vmLibGrid');
+          if (!filteredLib.length) {
+            if (libGrid.dataset.fp !== 'EMPTY') {
+              libGrid.dataset.fp = 'EMPTY';
+              libGrid.innerHTML = `<div class="card" style="grid-column:1/-1;text-align:center;color:var(--muted);padding:38px;">មិនទាន់មានវីដេអូរឿងភាគក្នុងថតទាញយកនៅឡើយទេ</div>`;
+            }
+          } else {
+            const libRows = filteredLib.map((item) => {
+              const liveJob = getJobForFolder(item.folder) || (item.seriesId ? getDramaJob(item.seriesId) : null);
+              const isAct = !!(liveJob && liveJob.active);
+              const isEpsOpen = state.expandedLibEps.has(item.folder);
+              const mergedList = Array.isArray(item.mergedMovies) ? item.mergedMovies : (item.mergedMovie ? [item.mergedMovie] : []);
+              return { item, liveJob, isAct, isEpsOpen, mergedList };
+            });
+            const libFp = libRows.map(({ item, isAct, isEpsOpen, mergedList }) => `${item.folder}:${item.downloadedCount}:${item.expectedTotal}:${mergedList.length}:${item.combinedSizeMb}:${isAct ? 1 : 0}:${isEpsOpen ? 1 : 0}`).join('|');
+
+            if (libGrid.dataset.fp === libFp) {
+              for (let i = 0; i < libRows.length; i += 1) {
+                const { liveJob, isAct } = libRows[i];
+                const card = libGrid.children[i];
+                const badge = card ? card.querySelector('[data-lib-live]') : null;
+                if (badge && isAct) badge.textContent = `⏳ ${liveJob.progress || 0}%`;
+              }
+            } else {
+              libGrid.dataset.fp = libFp;
+              libGrid.innerHTML = libRows.map(({ item, liveJob, isAct, isEpsOpen, mergedList }) => {
+                const titleShow = item.titleKhmer || item.title || item.folder;
+                const subShow = item.titleKhmer && item.title && item.titleKhmer !== item.title ? item.title : '';
+                const epLabel = item.expectedTotal > 0 ? `${item.downloadedCount}/${item.expectedTotal} ភាគ` : `${item.downloadedCount} ភាគ`;
+                const seq = analyzeEpisodeSequence(item.downloadedEps || []);
+
+                return `
+                  <div class="vm-lib-card">
+                    <div class="vm-thumb lg">
+                      ${item.cover ? `<img src="${esc(item.cover)}" loading="lazy" referrerpolicy="no-referrer" alt="" />` : '🎬'}
+                    </div>
+                    <div class="vm-card-body">
+                      <div class="vm-card-title">${esc(titleShow)}</div>
+                      ${subShow ? `<div class="vm-card-sub">${esc(subShow)}</div>` : ''}
+                      <div class="vm-badge-row">
+                        <span class="vm-badge done">✓ ${esc(epLabel)}</span>
+                        ${(item.platform || (item.source && item.source !== 'hongguo')) ? `<span class="vm-badge active">${esc(item.platform || item.source.toUpperCase())}</span>` : ''}
+                        ${seq.rangeText ? `<span class="vm-badge">${esc(seq.rangeText)}</span>` : ''}
+                        <span class="vm-badge">${esc(formatMb(item.combinedSizeMb))}</span>
+                        ${seq.gaps.length > 0 ? `<span class="vm-badge warn" title="ខ្វះភាគ: ${esc(seq.gaps.join(', '))}">⚠️ ខ្វះ ${seq.gaps.length} ភាគ (${esc(seq.gaps.slice(0, 3).join(', '))}${seq.gaps.length > 3 ? '...' : ''})</span>` : ''}
+                        ${mergedList.length > 0 ? `<span class="vm-badge done">🎬 ផ្គុំរួច ${mergedList.length} ឯកសារ</span>` : ''}
+                        ${isAct ? `<span class="vm-badge active" data-lib-live="1">⏳ ${liveJob.progress || 0}%</span>` : ''}
+                      </div>
+                      <div class="vm-actions">
+                        ${item.downloadedCount > 0 ? `<button class="btn btn-primary btn-xs" data-act="watch-folder" data-folder="${esc(item.folder)}" data-sid="${esc(item.seriesId)}" data-title="${esc(titleShow)}">▶️ មើល</button>` : ''}
+                        ${mergedList.length > 0 ? `<button class="btn btn-xs" style="border-color:rgba(16,185,129,0.5);color:#34d399;" data-act="watch-full-folder" data-folder="${esc(item.folder)}" data-sid="${esc(item.seriesId)}" data-title="${esc(titleShow)}">🎬 មើលពេញ</button>` : ''}
+                        ${item.downloadedCount >= 2 && !isAct ? `<button class="btn btn-xs" data-act="merge-folder" data-folder="${esc(item.folder)}" data-sid="${esc(item.seriesId)}">🎞️ ផ្គុំតាមលំដាប់</button>` : ''}
+                        ${(seq.sorted.length > 0 || mergedList.length > 0) ? `<button class="btn btn-xs" data-act="toggle-lib-eps" data-folder="${esc(item.folder)}">${isEpsOpen ? '📋 បិទបញ្ជីភាគ ▴' : '📋 ភាគតាមលំដាប់ ▾'}</button>` : ''}
+                        ${item.seriesId && !item.isSocial ? `<button class="btn btn-xs" data-act="open-drama" data-sid="${esc(item.seriesId)}" data-title="${esc(item.title)}" data-khmer="${esc(item.titleKhmer)}" data-cover="${esc(item.cover)}">📋 ទាញបន្ថែម</button>` : ''}
+                        <button class="btn btn-xs" data-act="open-folder" data-folder="${esc(item.folder)}" title="បើកថត">📂</button>
+                        ${!isAct ? `<button class="btn btn-ghost btn-xs" data-act="delete-folder" data-folder="${esc(item.folder)}" data-title="${esc(titleShow)}" title="លុបរឿងនេះ" style="color:#fca5a5;">🗑️</button>` : ''}
+                      </div>
+                      ${isEpsOpen ? `
+                        <div class="vm-ep-box">
+                          ${mergedList.length > 0 ? `
+                            <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+                              <span style="font-size:11.5px;color:var(--muted);">វីដេអូផ្គុំរួច៖</span>
+                              ${mergedList.map((mm) => `<button type="button" class="vm-merged-pill" data-act="watch-merged-part" data-folder="${esc(item.folder)}" data-sid="${esc(item.seriesId)}" data-title="${esc(titleShow)}" data-merged-file="${esc(mm.fileName)}">🎬 ${esc(mm.label || 'រឿងពេញ')} (${esc(mm.sizeMb)} MB)</button>`).join('')}
+                            </div>
+                          ` : ''}
+                          ${seq.sorted.length > 0 ? `
+                            <div style="font-size:11.5px;color:var(--muted);">ចុចលេខភាគដើម្បីមើលតាមលំដាប់៖</div>
+                            <div class="vm-ep-pills">
+                              ${seq.sorted.map((ep) => `<button type="button" class="vm-ep-pill" data-act="watch-lib-ep" data-folder="${esc(item.folder)}" data-sid="${esc(item.seriesId)}" data-title="${esc(titleShow)}" data-ep="${ep}">EP${ep}</button>`).join('')}
+                            </div>
+                          ` : ''}
+                        </div>
+                      ` : ''}
+                    </div>
+                  </div>
+                `;
+              }).join('');
+            }
+          }
+        }
+      }
+
+      // ================= DOWNLOAD & SSE =================
+      let sseRetryTimer = null;
+      function connectSSE() {
+        if (sseRetryTimer) { clearTimeout(sseRetryTimer); sseRetryTimer = null; }
+        if (state.sse) try { state.sse.close(); } catch {}
+        const es = new EventSource('/api/progress');
+        state.sse = es;
+        es.onmessage = (ev) => {
+          try {
+            const p = JSON.parse(ev.data);
+            if (!p) return;
+            if (Array.isArray(p.jobs)) {
+              applyJobsPayload(p.jobs, p.summary);
+            } else if (p.snapshot && p.snapshot.status && p.snapshot.status !== 'idle') {
+              applyJobsPayload([p.snapshot], p.summary);
+            }
+          } catch {}
+        };
+        es.onerror = () => {
+          try { es.close(); } catch {}
+          if (state.sse === es) state.sse = null;
+          if (!sseRetryTimer) {
+            sseRetryTimer = setTimeout(() => { sseRetryTimer = null; connectSSE(); }, 4000);
+          }
+        };
+      }
+
+      async function ensureSSE() {
+        if (state.sse && state.sse.readyState === 1) return;
+        connectSSE();
+        await new Promise((r) => {
+          const t = setTimeout(r, 1000);
+          if (state.sse) state.sse.onopen = () => { clearTimeout(t); r(); };
+        });
+      }
+
+      function startPolling() {
+        if (state.pollTimer) return;
+        state.pollTimer = setInterval(async () => {
+          try {
+            const d = await api('/api/download-status');
+            if (d && Array.isArray(d.jobs)) applyJobsPayload(d.jobs, d.summary);
+          } catch {}
+        }, 1200);
+      }
+
+      function stopPolling() {
+        if (state.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
+      }
+
+      function applyJobsPayload(jobs, summary) {
+        const prevById = new Map(state.jobs.map((j) => [j.jobId, j]));
+        state.jobs = Array.isArray(jobs) ? jobs : [];
+        if (summary) state.summary = summary;
+        else {
+          const activeList = state.jobs.filter((j) => j.active);
+          state.summary = { activeCount: activeList.length, totalJobs: state.jobs.length, totalSpeedText: state.summary.totalSpeedText || '0.0 MB/s' };
+        }
+
+        const anyActive = state.jobs.some((j) => j.active);
+        if (anyActive) startPolling(); else stopPolling();
+        syncNavAndFloat();
+
+        let shouldRefreshLib = false;
+        for (const job of state.jobs) {
+          if (job.active && job.seriesId) state.pickedDramas.delete(String(job.seriesId));
+          const prev = prevById.get(job.jobId);
+          if (prev && prev.active && !job.active) {
+            shouldRefreshLib = true;
+            const isMerge = job.mode === 'merge' || job.speedText === 'FFmpeg Merge';
+            const label = job.titleKhmer || job.title || '';
+            if (job.status === 'done') toast(`${isMerge ? '🎬 ផ្គុំរឿងពេញរួចរាល់' : '🎉 ទាញយករួចរាល់'}: ${label}`, 'ok');
+            else if (job.status === 'partial') toast(`⚠️ ${label}: មាន ${job.failed} ភាគបរាជ័យ`, 'warn');
+            else if (job.status === 'error') toast(`❌ ${label}: ${job.message || 'មានបញ្ហា'}`, 'err');
+
+            if (state.currentDrama && String(job.seriesId) === String(state.currentDrama.seriesId)) {
+              api(`/api/scanned-episodes?seriesId=${encodeURIComponent(job.seriesId)}&force=1`).then((r) => {
+                if (r.success && state.currentDrama && String(r.seriesId) === String(state.currentDrama.seriesId)) {
+                  state.downloaded = new Set(r.downloaded || []);
+                  state.broken = new Set(r.broken || []);
+                  state.currentDrama.hasMerged = !!r.hasMerged;
+                  state.currentDrama.mergedMovies = Array.isArray(r.mergedMovies) ? r.mergedMovies : [];
+                  renderHero();
+                  renderEpisodes();
+                  renderDramaProgressBox();
+                  syncButtons();
+                }
+              }).catch(() => {});
+            }
+          }
+        }
+        if (shouldRefreshLib) loadLibrary(true);
+
+        if (state.currentDrama) {
+          const curJob = currentDramaJob();
+          if (curJob) {
+            for (const [k, v] of Object.entries(curJob.episodes || {})) {
+              if (v && v.status === 'done') {
+                const ep = Number(k);
+                state.downloaded.add(ep);
+                state.broken.delete(ep);
+              }
+            }
+          }
+          renderHero();
+          renderEpisodes();
+          renderDramaProgressBox();
+          syncButtons();
+        }
+
+        if (state.view === 'browse') patchBrowseCardStatuses();
+        if (state.view === 'manage') renderManage();
+      }
+
+      async function startDownload(eps, targetDrama = null) {
+        const d = targetDrama || state.currentDrama;
+        if (!d || !d.seriesId) return;
+        const clean = eps === 'all'
+          ? 'all'
+          : Array.from(new Set(eps.map(Number).filter((n) => n >= 1 && (!d.total || n <= d.total)))).sort((a, b) => a - b);
+        if (clean !== 'all' && !clean.length) return;
+        try {
+          await ensureSSE();
+          const res = await api('/api/start-download', {
+            method: 'POST',
+            body: JSON.stringify(buildStartDownloadPayload(d, clean))
+          });
+          if (!res.success) { toast(res.error || 'មិនអាចចាប់ផ្តើមបានទេ', 'err'); return; }
+          if (!targetDrama) state.selected.clear();
+          if (res.jobs) applyJobsPayload(res.jobs, res.summary);
+          startPolling();
+          const activeCnt = res.summary ? res.summary.activeCount : 1;
+          if (activeCnt > 1) toast(`🚀 បន្ថែម "${d.titleKhmer || d.title}" ទៅការទាញយកព្រមគ្នា (${activeCnt} រឿង)`, 'ok');
+          if (state.currentDrama) {
+            renderEpisodes();
+            renderDramaProgressBox();
+            syncButtons();
+          }
+        } catch (err) {
+          toast(err.message || 'មានបញ្ហាតភ្ជាប់ Server', 'err');
+        }
+      }
+
+      // ================= SEQUENTIAL MERGE MODAL =================
+      function openMergeModal({ folder = '', seriesId = '', title = '', expectedTotal = 0, availableEps = [] }) {
+        const seq = analyzeEpisodeSequence(availableEps);
+        if (seq.sorted.length < 2) {
+          toast(`⚠️ ត្រូវការយ៉ាងតិច ២ ភាគដើម្បីផ្គុំតាមលំដាប់ (មាន ${seq.sorted.length} ភាគ)`, 'warn');
+          return;
+        }
+        state.mergeCtx = {
+          folder,
+          seriesId,
+          title: title || folder || `Series ${seriesId}`,
+          expectedTotal: Number(expectedTotal) || 0,
+          availableEps: seq.sorted,
+          selectedSet: new Set(seq.sorted)
+        };
+        $('mergeModalInfo').textContent = `${state.mergeCtx.title} — មាន ${seq.sorted.length} ភាគ (${seq.rangeText})`;
+        $('mergeFromInput').value = String(seq.firstEp);
+        $('mergeToInput').value = String(seq.lastEp);
+
+        // Build quick sequence presets cleanly (All + 20-ep sequential parts or halves)
+        const presets = [{ label: `📚 ទាំងអស់ (${seq.sorted.length} ភាគ)`, from: seq.firstEp, to: seq.lastEp }];
+        const maxEp = seq.lastEp;
+        if (maxEp > 20) {
+          for (let start = 1; start <= maxEp; start += 20) {
+            const end = Math.min(maxEp, start + 19);
+            const cnt = seq.sorted.filter((e) => e >= start && e <= end).length;
+            if (cnt >= 2) presets.push({ label: `ភាគ ${start}–${end} (${cnt})`, from: start, to: end });
+          }
+        } else if (seq.sorted.length >= 8) {
+          const midIdx = Math.ceil(seq.sorted.length / 2);
+          presets.push({ label: `ពាក់កណ្ដាលទី ១ (${seq.sorted[0]}–${seq.sorted[midIdx - 1]})`, from: seq.sorted[0], to: seq.sorted[midIdx - 1] });
+          presets.push({ label: `ពាក់កណ្ដាលទី ២ (${seq.sorted[midIdx]}–${maxEp})`, from: seq.sorted[midIdx], to: maxEp });
+        }
+        $('mergePresets').innerHTML = presets.map((p) =>
+          `<button type="button" class="btn btn-xs" data-merge-from="${p.from}" data-merge-to="${p.to}">${esc(p.label)}</button>`
+        ).join('');
+
+        $('mergeEpGrid').innerHTML = seq.sorted.map((ep) =>
+          `<button type="button" class="merge-ep-item active" data-merge-ep="${ep}">EP${ep}</button>`
+        ).join('');
+
+        updateMergeModalView();
+        $('mergeModal').classList.add('show');
+      }
+
+      function updateMergeModalView() {
+        const ctx = state.mergeCtx;
+        if (!ctx) return;
+        const selected = ctx.availableEps.filter((ep) => ctx.selectedSet.has(ep));
+        $('mergeSelCount').textContent = String(selected.length);
+
+        $('mergeEpGrid').querySelectorAll('[data-merge-ep]').forEach((btn) => {
+          btn.classList.toggle('active', ctx.selectedSet.has(Number(btn.dataset.mergeEp)));
+        });
+
+        const warnEl = $('mergeWarnBanner');
+        const previewEl = $('mergePreviewBox');
+        const confirmBtn = $('btnConfirmMerge');
+
+        if (selected.length < 2) {
+          warnEl.classList.remove('show');
+          previewEl.innerHTML = 'សូមជ្រើសយ៉ាងតិច <strong>២ ភាគ</strong> ដើម្បីផ្គុំតាមលំដាប់។';
+          confirmBtn.disabled = true;
+          confirmBtn.textContent = '🎞️ រើសយ៉ាងតិច ២ ភាគ';
+          return;
+        }
+
+        const selSeq = analyzeEpisodeSequence(selected);
+        const availSet = new Set(ctx.availableEps);
+        const missingSelectedGaps = selSeq.gaps.filter((g) => !availSet.has(g));
+        if (missingSelectedGaps.length > 0) {
+          const previewGaps = missingSelectedGaps.slice(0, 8).map((g) => `EP${g}`).join(', ');
+          warnEl.classList.add('show');
+          warnEl.textContent = `⚠️ ចំណាំ៖ នៅចន្លោះ EP${selSeq.firstEp} → EP${selSeq.lastEp} មិនទាន់មានភាគ ${previewGaps}${missingSelectedGaps.length > 8 ? ` និង ${missingSelectedGaps.length - 8} ភាគទៀត` : ''} ទេ — វីដេអូនឹងផ្គុំភ្ជាប់តាមលំដាប់ភាគដែលមាន។`;
+        } else {
+          warnEl.classList.remove('show');
+        }
+
+        const isAll = selected.length === ctx.availableEps.length;
+        const padLen = Math.max(3, String(ctx.expectedTotal || selSeq.lastEp || 100).length);
+        const pad = (n) => `EP${String(n).padStart(padLen, '0')}`;
+        const outName = isAll ? `${ctx.title} - Full Movie.mp4` : `${ctx.title} - ${pad(selSeq.firstEp)}-${pad(selSeq.lastEp)}.mp4`;
+        const chainPreview = selected.length <= 8
+          ? selected.map((e) => `EP${e}`).join(' → ')
+          : `${selected.slice(0, 4).map((e) => `EP${e}`).join(' → ')} → ... → ${selected.slice(-2).map((e) => `EP${e}`).join(' → ')}`;
+
+        previewEl.innerHTML = `
+          <div>លំដាប់ផ្គុំ៖ <strong>${esc(chainPreview)}</strong> (${selected.length} ភាគ)</div>
+          <div>ឯកសារលទ្ធផល៖ <strong>Full Movie/${esc(outName)}</strong></div>
+        `;
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = `🎞️ ចាប់ផ្តើមផ្គុំតាមលំដាប់ (${selected.length} ភាគ)`;
+      }
+
+      async function confirmAndStartMerge() {
+        const ctx = state.mergeCtx;
+        if (!ctx) return;
+        const selected = ctx.availableEps.filter((ep) => ctx.selectedSet.has(ep));
+        if (selected.length < 2) return;
+        const isAll = selected.length === ctx.availableEps.length;
+        $('mergeModal').classList.remove('show');
+        await ensureSSE();
+        const r = await api('/api/merge-drama', {
+          method: 'POST',
+          body: JSON.stringify({
+            folder: ctx.folder || undefined,
+            seriesId: ctx.seriesId || undefined,
+            selectedEps: isAll ? undefined : selected
+          })
+        });
+        if (!r.success) {
+          toast(r.error || 'មិនអាចផ្គុំបានទេ', 'err');
+          return;
+        }
+        if (r.jobs) applyJobsPayload(r.jobs, r.summary);
+        startPolling();
+        toast(`🎞️ កំពុងផ្គុំ ${r.count} ភាគតាមលំដាប់ (EP${r.firstEp} → EP${r.lastEp})...`, 'ok');
+      }
+
+      // ================= VIDEO PLAYER =================
+      function showVideoModal(title, src, isEpisode) {
+        $('videoTitle').textContent = title;
+        const ctx = state.playerCtx;
+        const eps = ctx && Array.isArray(ctx.eps) ? ctx.eps : [];
+        const mergedList = (ctx && Array.isArray(ctx.mergedMovies) && ctx.mergedMovies.length)
+          ? ctx.mergedMovies
+          : (ctx && ctx.hasMerged ? [{ fileName: '', label: 'រឿងពេញ' }] : []);
+        const hasSeriesId = !!(ctx && ctx.seriesId);
+        const hasMerged = mergedList.length > 0;
+
+        $('btnPrevEp').style.display = (isEpisode && eps.length > 1) ? 'inline-flex' : 'none';
+        $('btnNextEp').style.display = (isEpisode && eps.length > 1) ? 'inline-flex' : 'none';
+        $('btnWatchFullInModal').style.display = (isEpisode && hasMerged) ? 'inline-flex' : 'none';
+        $('btnRedownloadEp').style.display = (isEpisode && hasSeriesId) ? 'inline-flex' : 'none';
+
+        if ((eps.length > 0 || hasMerged) && ctx) {
+          $('videoEpStrip').classList.add('show');
+          $('videoEpStrip').innerHTML = [
+            ...mergedList.map((mm) => {
+              const isActiveMerged = !isEpisode && ((ctx.currentMergedFile || '') === (mm.fileName || '') || (!ctx.currentMergedFile && mm === mergedList[0]));
+              return `<button type="button" class="video-ep-chip ${isActiveMerged ? 'active' : ''}" data-play-full="${esc(mm.fileName || '')}">🎬 ${esc(mm.label || 'រឿងពេញ')}</button>`;
+            }),
+            ...eps.map((n) => `<button type="button" class="video-ep-chip ${isEpisode && ctx.currentEp === n ? 'active' : ''}" data-play-ep="${n}">EP${n}</button>`)
+          ].join('');
+        } else {
+          $('videoEpStrip').classList.remove('show');
+          $('videoEpStrip').innerHTML = '';
+        }
+
+        const p = $('videoPlayer');
+        p.src = src;
+        $('videoModal').classList.add('show');
+        p.play().catch(() => {});
+      }
+
+      function buildVideoSrc({ seriesId, folder, ep, full, mergedFile }) {
+        const base = folder
+          ? `/api/video?folder=${encodeURIComponent(folder)}`
+          : `/api/video?seriesId=${encodeURIComponent(seriesId)}`;
+        if (full) {
+          const mf = mergedFile ? `&mergedFile=${encodeURIComponent(mergedFile)}` : '';
+          return `${base}&full=1${mf}&t=${Date.now()}`;
+        }
+        return `${base}&ep=${ep}&t=${Date.now()}`;
+      }
+
+      function openVideo(ep) {
+        if (!state.currentDrama) return;
+        state.previewEp = ep;
+        const eps = Array.from(state.downloaded).sort((a, b) => a - b);
+        state.playerCtx = {
+          mode: 'series',
+          seriesId: state.currentDrama.seriesId,
+          folder: null,
+          title: state.currentDrama.titleKhmer || state.currentDrama.title,
+          eps,
+          currentEp: ep,
+          currentMergedFile: '',
+          hasMerged: !!state.currentDrama.hasMerged,
+          mergedMovies: state.currentDrama.mergedMovies || []
+        };
+        showVideoModal(`${state.playerCtx.title} — ភាគទី ${ep}`, buildVideoSrc({ seriesId: state.currentDrama.seriesId, ep }), true);
+      }
+
+      function openFullVideo() {
+        if (!state.currentDrama) return;
+        state.previewEp = null;
+        const eps = Array.from(state.downloaded).sort((a, b) => a - b);
+        const list = state.currentDrama.mergedMovies || [];
+        const firstMerged = list[0] ? list[0].fileName : '';
+        state.playerCtx = {
+          mode: 'series',
+          seriesId: state.currentDrama.seriesId,
+          folder: null,
+          title: state.currentDrama.titleKhmer || state.currentDrama.title,
+          eps,
+          currentEp: null,
+          currentMergedFile: firstMerged,
+          hasMerged: true,
+          mergedMovies: list
+        };
+        showVideoModal(`🎬 ${state.playerCtx.title} — ${list[0] ? list[0].label : 'រឿងពេញ'}`, buildVideoSrc({ seriesId: state.currentDrama.seriesId, full: true, mergedFile: firstMerged }), false);
+      }
+
+      async function openFolderVideo(folder, seriesId, title, startFull = false, startEp = null, startMergedFile = '') {
+        try {
+          const data = await api(`/api/library-episodes?folder=${encodeURIComponent(folder)}`);
+          if (!data.success) { toast(data.error || 'មិនអាចបើកវីដេអូបានទេ', 'err'); return; }
+          const eps = (data.episodes || []).map((e) => e.epNum);
+          const mergedMovies = Array.isArray(data.mergedMovies) ? data.mergedMovies : (data.mergedMovie ? [data.mergedMovie] : []);
+          const hasMerged = mergedMovies.length > 0;
+          const sid = seriesId || (data.meta && data.meta.seriesId) || '';
+          const displayTitle = title || (data.meta && (data.meta.titleKhmer || data.meta.title)) || folder;
+          if ((startFull || !eps.length || startMergedFile) && hasMerged) {
+            const targetFile = startMergedFile || (mergedMovies[0] ? mergedMovies[0].fileName : '');
+            const matched = mergedMovies.find((m) => m.fileName === targetFile) || mergedMovies[0];
+            state.previewEp = null;
+            state.playerCtx = {
+              mode: 'folder', folder, seriesId: sid, title: displayTitle,
+              eps, currentEp: null, currentMergedFile: targetFile, hasMerged, mergedMovies
+            };
+            showVideoModal(`🎬 ${displayTitle} — ${matched ? matched.label : 'រឿងពេញ'}`, buildVideoSrc({ folder, full: true, mergedFile: targetFile }), false);
+            return;
+          }
+          if (!eps.length) { toast('មិនមានភាគវីដេអូក្នុងថតនេះទេ', 'warn'); return; }
+          const targetEp = (startEp && eps.includes(Number(startEp))) ? Number(startEp) : eps[0];
+          state.previewEp = targetEp;
+          state.playerCtx = {
+            mode: 'folder', folder, seriesId: sid, title: displayTitle,
+            eps, currentEp: targetEp, currentMergedFile: '', hasMerged, mergedMovies
+          };
+          showVideoModal(`${displayTitle} — ភាគទី ${targetEp}`, buildVideoSrc({ folder, ep: targetEp }), true);
+        } catch (err) {
+          toast(err.message, 'err');
+        }
+      }
+
+      function playContextEp(ep) {
+        const ctx = state.playerCtx;
+        if (!ctx) return;
+        ctx.currentEp = ep;
+        ctx.currentMergedFile = '';
+        state.previewEp = ep;
+        showVideoModal(`${ctx.title} — ភាគទី ${ep}`, buildVideoSrc({ folder: ctx.folder, seriesId: ctx.seriesId, ep }), true);
+      }
+
+      function playContextMerged(mergedFile = '') {
+        const ctx = state.playerCtx;
+        if (!ctx) return;
+        const list = Array.isArray(ctx.mergedMovies) ? ctx.mergedMovies : [];
+        const chosen = mergedFile
+          ? (list.find((m) => m.fileName === mergedFile) || { fileName: mergedFile, label: 'រឿងពេញ' })
+          : (list[0] || { fileName: '', label: 'រឿងពេញ' });
+        ctx.currentEp = null;
+        ctx.currentMergedFile = chosen.fileName || '';
+        state.previewEp = null;
+        showVideoModal(
+          `🎬 ${ctx.title} — ${chosen.label || 'រឿងពេញ'}`,
+          buildVideoSrc({ folder: ctx.folder, seriesId: ctx.seriesId, full: true, mergedFile: ctx.currentMergedFile }),
+          false
+        );
+      }
+
+      function closeVideo() {
+        const p = $('videoPlayer');
+        p.pause(); p.removeAttribute('src'); p.load();
+        $('videoModal').classList.remove('show');
+      }
+
+      function getPref(newKey, legacyKey) {
+        try {
+          const val = localStorage.getItem(newKey);
+          if (val !== null) return val;
+          return localStorage.getItem(legacyKey);
+        } catch {
+          return null;
+        }
+      }
+      function setPref(newKey, value) {
+        try { localStorage.setItem(newKey, value); } catch {}
+      }
+
+      // ================= CLOUD LICENSE & BOOT =================
+      let workspaceStarted = false;
+      let licenseHeartbeatTimer = null;
+      let licenseStatusState = { enforced: false, machineId: '' };
+
+      function applyAnnouncementBanner(text) {
+        const bar = $('cloudBannerBar');
+        if (!bar) return;
+        const msg = String(text || '').trim();
+        if (msg) {
+          bar.textContent = msg;
+          bar.style.display = 'block';
+        } else {
+          bar.textContent = '';
+          bar.style.display = 'none';
+        }
+      }
+
+      function applyGateDownloadLink(url) {
+        const el = $('gateDownloadLink');
+        if (!el) return;
+        const clean = String(url || '').trim();
+        if (/^https?:\/\//i.test(clean)) {
+          el.href = clean;
+          el.style.display = 'inline-block';
+        } else {
+          el.style.display = 'none';
+        }
+      }
+
+      function updateSettingsLicenseUi(info, enforced, machineId) {
+        const box = $('settingsLicenseBox');
+        if (!box) return;
+        if (!enforced) {
+          box.style.display = 'none';
+          return;
+        }
+        box.style.display = 'flex';
+        if ($('settingsMachineIdText') && machineId) {
+          $('settingsMachineIdText').textContent = machineId;
+        }
+        if (info && info.maskedKey) {
+          $('settingsLicCustomer').textContent = info.customerName || 'អតិថិជន EZA PRO';
+          const expTxt = info.expiresAt ? new Date(info.expiresAt).toLocaleDateString('en-GB') : 'Lifetime';
+          $('settingsLicExpiry').textContent = `Key: ${info.maskedKey} • សុពលភាព: ${expTxt}`;
+        } else {
+          $('settingsLicCustomer').textContent = 'មិនទាន់ផ្ទៀងផ្ទាត់';
+          $('settingsLicExpiry').textContent = '';
+        }
+      }
+
+      function showLicenseGate(errorMsg = '') {
+        const gate = $('licenseGateOverlay');
+        if (!gate) return;
+        if (errorMsg && $('gateErrorMsg')) $('gateErrorMsg').textContent = errorMsg;
+        gate.style.display = 'flex';
+      }
+
+      function hideLicenseGate() {
+        const gate = $('licenseGateOverlay');
+        if (gate) gate.style.display = 'none';
+        if ($('gateErrorMsg')) $('gateErrorMsg').textContent = '';
+      }
+
+      function copyMachineIdText() {
+        const id = licenseStatusState.machineId || ($('gateMachineIdText') ? $('gateMachineIdText').textContent : '');
+        if (!id || id === 'EZA-....') return;
+        navigator.clipboard?.writeText(id).then(() => {
+          toast(`📋 បានចម្លង Machine ID៖ ${id}`, 'ok');
+        }).catch(() => toast(id, 'ok'));
+      }
+
+      function startLicenseHeartbeat() {
+        if (licenseHeartbeatTimer || !licenseStatusState.enforced) return;
+        licenseHeartbeatTimer = setInterval(async () => {
+          try {
+            const res = await fetch('/api/license/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'recheck' })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (data.maintenanceBanner !== undefined) applyAnnouncementBanner(data.maintenanceBanner);
+            if (data.downloadUrl !== undefined) applyGateDownloadLink(data.downloadUrl);
+            if (!res.ok || !data.valid) {
+              updateSettingsLicenseUi(null, true, licenseStatusState.machineId);
+              showLicenseGate(data.error || 'សិទ្ធិប្រើប្រាស់ត្រូវបានផ្លាស់ប្ដូរ ឬបិទដោយ Admin។');
+            } else if (data.licenseInfo) {
+              updateSettingsLicenseUi(data.licenseInfo, true, licenseStatusState.machineId);
+            }
+          } catch {}
+        }, 10 * 60 * 1000);
+      }
+
+      async function startUnlockedWorkspace() {
+        if (workspaceStarted) return;
+        workspaceStarted = true;
+        connectSSE();
+        api('/api/sources').then((sRes) => {
+          if (sRes && Array.isArray(sRes.sources) && sRes.sources.length) {
+            state.sources = sRes.sources;
+            renderSources();
+          }
+          const toolBadges = [
+            { info: sRes && sRes.ytdlp, el: $('ytdlpVerBadge'), label: 'yt-dlp' },
+            { info: sRes && sRes.aria2c, el: $('aria2VerBadge'), label: 'aria2c' },
+            { info: sRes && sRes.nm3u8dl, el: $('nm3u8VerBadge'), label: 'N_m3u8DL-RE' },
+          ];
+          for (const tb of toolBadges) {
+            if (!tb.el || !tb.info) continue;
+            tb.el.textContent = tb.info.available
+              ? `${tb.label} ${tb.info.version || 'OK'}`
+              : `${tb.label} (Unavailable)`;
+            tb.el.className = tb.info.available ? 'vm-badge done' : 'vm-badge';
+            tb.el.style.display = 'inline-block';
+          }
+          if ($('gpuEncBadge') && sRes && sRes.gpu && sRes.gpu.available) {
+            $('gpuEncBadge').textContent = `GPU ${sRes.gpu.encoder}`;
+            $('gpuEncBadge').style.display = 'inline-block';
+          }
+          if ($('socialUseAria2') && sRes && sRes.aria2c && !sRes.aria2c.available) {
+            $('socialUseAria2').checked = false;
+            $('socialUseAria2').disabled = true;
+          }
+        }).catch(() => {});
+        await Promise.all([loadConfig(), loadCatalog(false), loadLibrary(true)]);
+        try {
+          const st = await api('/api/download-status');
+          if (st && Array.isArray(st.jobs)) {
+            applyJobsPayload(st.jobs, st.summary);
+          }
+        } catch {}
+      }
+
+      async function submitLicenseKey() {
+        const input = $('gateLicenseInput');
+        const errEl = $('gateErrorMsg');
+        const btn = $('btnSubmitLicense');
+        const code = input ? String(input.value || '').trim() : '';
+        if (!code) {
+          if (errEl) errEl.textContent = 'សូមបញ្ចូល License Key ជាមុនសិន។';
+          return;
+        }
+        if (errEl) errEl.textContent = '⏳ កំពុងផ្ទៀងផ្ទាត់សុវត្ថិភាព...';
+        if (btn) btn.disabled = true;
+        try {
+          const res = await fetch('/api/license/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code })
+          });
+          const data = await res.json().catch(() => ({}));
+          if (data.maintenanceBanner !== undefined) applyAnnouncementBanner(data.maintenanceBanner);
+          if (data.downloadUrl !== undefined) applyGateDownloadLink(data.downloadUrl);
+          if (!res.ok || !data.valid) {
+            if (errEl) errEl.textContent = data.error || 'License Key មិនត្រឹមត្រូវទេ។';
+            return;
+          }
+          if (input) input.value = '';
+          updateSettingsLicenseUi(data.licenseInfo, true, data.machineId || licenseStatusState.machineId);
+          hideLicenseGate();
+          startLicenseHeartbeat();
+          toast('🔓 បានផ្ទៀងផ្ទាត់សិទ្ធិប្រើប្រាស់ជោគជ័យ!', 'ok');
+          await startUnlockedWorkspace();
+        } catch (err) {
+          if (errEl) errEl.textContent = '❌ មិនអាចតភ្ជាប់ Cloud Server បានទេ៖ ' + (err.message || '');
+        } finally {
+          if (btn) btn.disabled = false;
+        }
+      }
+
+      // ================= BOOT & EVENTS =================
+      async function loadConfig() {
+        try {
+          $('chkAutoMerge').checked = getPref('eza_autoMerge', 'hdrg_autoMerge') === '1';
+          syncMultiSelectUi();
+          const savedQual = getPref('eza_quality', 'hdrg_quality');
+          if (savedQual === 'fast' || savedQual === '1080p') $('qualitySelect').value = savedQual;
+          const savedWorkers = getPref('eza_workers', 'hdrg_workers');
+          if (savedWorkers && ['6', '8', '12', '16'].includes(savedWorkers)) $('workersSelect').value = savedWorkers;
+
+          const [cfg, dir] = await Promise.all([api('/api/config'), api('/api/download-dir')]);
+          $('geminiHint').textContent = cfg.hasKey ? `(${cfg.maskedKey})` : '(មិនទាន់មាន)';
+          if (dir && dir.path) {
+            state.downloadDir = dir.path;
+            $('folderInput').value = dir.path;
+            $('savePathLabel').textContent = dir.path;
+            $('vmPathLabel').textContent = dir.path;
+          }
+        } catch {}
+      }
+
+      let fpCurrentPath = '';
+      let fpParentPath = null;
+
+      async function loadFolderBrowser(targetPath = '') {
+        $('fpList').innerHTML = '<div style="padding: 20px; text-align: center; color: var(--muted);">កំពុងផ្ទុក...</div>';
+        try {
+          const data = await api(`/api/list-dirs?path=${encodeURIComponent(targetPath || state.downloadDir || '')}`);
+          if (!data.success) {
+            toast(data.error || 'មិនអាចបើកថតនេះបានទេ', 'err');
+            return;
+          }
+          fpCurrentPath = data.current;
+          fpParentPath = data.parent;
+          $('fpCurrentInput').value = data.current;
+          $('fpUpBtn').disabled = !data.parent;
+
+          const quickChips = [
+            ...(data.shortcuts || []).map((s) => `<button class="fp-chip" data-path="${esc(s.path)}">${esc(s.label)}</button>`),
+            ...(data.drives || []).map((d) => `<button class="fp-chip" data-path="${esc(d)}">💽 ${esc(d)}</button>`)
+          ];
+          $('fpQuickBar').innerHTML = quickChips.join('');
+          $('fpQuickBar').querySelectorAll('.fp-chip').forEach((b) => {
+            b.addEventListener('click', () => loadFolderBrowser(b.dataset.path));
+          });
+
+          const list = data.folders || [];
+          $('fpList').innerHTML = list.length
+            ? list.map((f) => `<button class="fp-item" data-path="${esc(f.path)}">📁 <span>${esc(f.name)}</span></button>`).join('')
+            : '<div style="padding: 18px; text-align: center; color: var(--muted); font-size: 13px;">មិនមានថតរងនៅខាងក្នុងទេ (ចុច "រក្សាទុកក្នុងថតនេះ" ឬ "បង្កើតថតថ្មី")</div>';
+
+          $('fpList').querySelectorAll('.fp-item').forEach((b) => {
+            b.addEventListener('click', () => loadFolderBrowser(b.dataset.path));
+          });
+        } catch (err) {
+          toast(err.message, 'err');
+        }
+      }
+
+      async function pickSaveFolder() {
+        $('folderPickerModal').classList.add('show');
+        await loadFolderBrowser(state.downloadDir || '');
+      }
+
+      $('fpUpBtn').addEventListener('click', () => { if (fpParentPath) loadFolderBrowser(fpParentPath); });
+      $('fpGoBtn').addEventListener('click', () => loadFolderBrowser($('fpCurrentInput').value.trim()));
+      $('fpCurrentInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadFolderBrowser($('fpCurrentInput').value.trim()); });
+      $('fpCreateBtn').addEventListener('click', async () => {
+        const name = $('fpNewFolderInput').value.trim();
+        if (!name) { $('fpNewFolderInput').focus(); return; }
+        const r = await api('/api/create-folder', {
+          method: 'POST',
+          body: JSON.stringify({ parentPath: fpCurrentPath, name })
+        });
+        if (!r.success) { toast(r.error || 'មិនអាចបង្កើតថតបានទេ', 'err'); return; }
+        $('fpNewFolderInput').value = '';
+        await loadFolderBrowser(r.path);
+      });
+      $('fpSelectBtn').addEventListener('click', async () => {
+        const chosen = ($('fpCurrentInput').value || fpCurrentPath || '').trim();
+        if (!chosen) return;
+        const r = await api('/api/download-dir', { method: 'POST', body: JSON.stringify({ path: chosen }) });
+        if (!r.success) { toast(r.error || 'ផ្លូវថតមិនត្រឹមត្រូវ', 'err'); return; }
+        state.downloadDir = r.path;
+        $('folderInput').value = r.path;
+        $('savePathLabel').textContent = r.path;
+        $('vmPathLabel').textContent = r.path;
+        $('folderPickerModal').classList.remove('show');
+        toast(`📁 បានប្ដូរទីតាំងរក្សាទុកទៅ៖ ${r.path}`, 'ok');
+        loadLibrary(true);
+        if (state.currentDrama) openDrama(state.currentDrama.seriesId, {}, true, false);
+      });
+
+      async function boot() {
+        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test($('searchInput').value.trim())) {
+          $('searchInput').value = '';
+        }
+        renderSources();
+        renderCats();
+        syncBrowseUi();
+
+        try {
+          const stRes = await fetch('/api/license/status');
+          const stData = await stRes.json().catch(() => ({}));
+          licenseStatusState.enforced = Boolean(stData.cloudLicenseEnforced);
+          licenseStatusState.machineId = stData.machineId || '';
+          if ($('gateMachineIdText') && stData.machineId) {
+            $('gateMachineIdText').textContent = stData.machineId;
+          }
+          if (stData.maintenanceBanner) applyAnnouncementBanner(stData.maintenanceBanner);
+          if (stData.downloadUrl) applyGateDownloadLink(stData.downloadUrl);
+
+          if (stData.cloudLicenseEnforced) {
+            updateSettingsLicenseUi(stData.licensed ? stData.licenseInfo : null, true, stData.machineId);
+            const vRes = await fetch('/api/license/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'recheck' })
+            });
+            const vData = await vRes.json().catch(() => ({}));
+            if (vData.maintenanceBanner !== undefined) applyAnnouncementBanner(vData.maintenanceBanner);
+            if (vData.downloadUrl !== undefined) applyGateDownloadLink(vData.downloadUrl);
+            if (!vRes.ok || !vData.valid) {
+              const msg = vData.reason && vData.reason !== 'missing_key' ? (vData.error || '') : '';
+              showLicenseGate(msg);
+              return;
+            }
+            updateSettingsLicenseUi(vData.licenseInfo, true, stData.machineId);
+            hideLicenseGate();
+            startLicenseHeartbeat();
+          } else {
+            updateSettingsLicenseUi(null, false, stData.machineId);
+            hideLicenseGate();
+          }
+        } catch (err) {
+          showLicenseGate('⚠️ មិនអាចពិនិត្យសិទ្ធិប្រើប្រាស់បានទេ៖ ' + (err.message || ''));
+          return;
+        }
+
+        await startUnlockedWorkspace();
+      }
+
+      async function safeRun(fn) {
+        try { await fn(); } catch (err) { toast(err.message || 'មានបញ្ហាតភ្ជាប់ Server', 'err'); }
+      }
+
+      $('brandHome').addEventListener('click', () => setView('browse'));
+      $('btnNavBrowse').addEventListener('click', () => setView('browse'));
+      $('btnNavManage').addEventListener('click', () => setView('manage'));
+      $('btnBackHome').addEventListener('click', () => setView('browse'));
+      $('btnBackToRunning').addEventListener('click', () => setView('drama'));
+      $('jobFloat').addEventListener('click', () => setView('manage'));
+
+      $('btnResolve').addEventListener('click', doSearch);
+      $('searchInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
+      $('btnPaste').addEventListener('click', async () => {
+        try {
+          const t = await navigator.clipboard.readText();
+          if (t) { $('searchInput').value = t.trim(); doSearch(); }
+        } catch { $('searchInput').focus(); }
+      });
+      $('btnClearSearch').addEventListener('click', () => {
+        state.mode = 'catalog';
+        syncBrowseUi(); renderCats(); renderDramaGrid();
+      });
+      $('btnLoadMore').addEventListener('click', () => { state.page += 1; loadCatalog(true); });
+
+      $('sourceRow').addEventListener('click', (e) => {
+        const pill = e.target.closest('[data-source]');
+        if (!pill) return;
+        switchSource(pill.dataset.source);
+      });
+      $('btnSocialProbe').addEventListener('click', () => safeRun(() => probeSocialUrl()));
+      $('socialUrlInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') safeRun(() => probeSocialUrl()); });
+      $('btnSocialPaste').addEventListener('click', async () => {
+        try {
+          const t = await navigator.clipboard.readText();
+          if (t) { $('socialUrlInput').value = t.trim(); safeRun(() => probeSocialUrl(t.trim())); }
+        } catch { $('socialUrlInput').focus(); }
+      });
+      $('btnSocialDownload').addEventListener('click', () => safeRun(startSocialDownload));
+      $('btnSocialPlAll').addEventListener('click', () => {
+        if (!state.socialInfo || !Array.isArray(state.socialInfo.entries)) return;
+        state.socialSelectedIndices = new Set(state.socialInfo.entries.map((e) => e.index));
+        renderSocialResult();
+      });
+      $('btnSocialPlClear').addEventListener('click', () => {
+        state.socialSelectedIndices.clear();
+        renderSocialResult();
+      });
+      $('socialPlaylistBox').addEventListener('change', (e) => {
+        const chk = e.target.closest('[data-pl-idx]');
+        if (!chk) return;
+        const idx = Number(chk.dataset.plIdx);
+        if (chk.checked) state.socialSelectedIndices.add(idx);
+        else state.socialSelectedIndices.delete(idx);
+        const total = state.socialInfo && state.socialInfo.entries ? state.socialInfo.entries.length : 0;
+        $('socialPlaylistSummary').textContent = `បានរើស ${state.socialSelectedIndices.size}/${total} វីដេអូ`;
+      });
+
+      // Delegated clicks & keyboard activation on Browse Poster Grid
+      $('dramaGrid').addEventListener('click', (e) => {
+        const pickBtn = e.target.closest('[data-card-pick]');
+        if (pickBtn) {
+          e.stopPropagation();
+          const card = pickBtn.closest('.poster-card');
+          if (card) toggleDramaPick(getDramaPayloadFromCard(card));
+          return;
+        }
+        const dlBtn = e.target.closest('[data-card-dl]');
+        if (dlBtn) {
+          e.stopPropagation();
+          const card = dlBtn.closest('.poster-card');
+          if (card) safeRun(() => quickDownloadDrama(getDramaPayloadFromCard(card)));
+          return;
+        }
+        const card = e.target.closest('.poster-card');
+        if (!card) return;
+        if (state.multiSelect) {
+          toggleDramaPick(getDramaPayloadFromCard(card));
+        } else {
+          openDrama(card.dataset.id, { title: card.dataset.title, titleKhmer: card.dataset.khmer, cover: card.dataset.cover });
+        }
+      });
+
+      $('dramaGrid').addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const card = e.target.closest('.poster-card');
+        if (!card || e.target !== card) return;
+        e.preventDefault();
+        card.click();
+      });
+
+      $('btnMultiSelectMode').addEventListener('click', () => {
+        state.multiSelect = !state.multiSelect;
+        syncFloatingBars();
+      });
+      $('btnDownloadPicked').addEventListener('click', () => safeRun(downloadPickedDramas));
+      $('btnClearPicked').addEventListener('click', () => {
+        state.pickedDramas.clear();
+        state.multiSelect = false;
+        patchBrowseCardStatuses();
+        syncFloatingBars();
+      });
+      $('chkMultiAutoMerge').addEventListener('change', () => {
+        $('chkAutoMerge').checked = $('chkMultiAutoMerge').checked;
+        setPref('eza_autoMerge', $('chkAutoMerge').checked ? '1' : '0');
+      });
+
+      $('btnLiveDockManage').addEventListener('click', () => setView('manage'));
+      $('btnLiveDockStopAll').addEventListener('click', stopAllActiveJobs);
+      $('liveDockChips').addEventListener('click', (e) => {
+        const stopBtn = e.target.closest('[data-dock-stop]');
+        if (!stopBtn) return;
+        safeRun(async () => {
+          const r = await api('/api/stop-download', { method: 'POST', body: JSON.stringify({ jobId: Number(stopBtn.dataset.dockStop) }) });
+          if (r.jobs) applyJobsPayload(r.jobs, r.summary);
+          toast('🛑 បានបញ្ឈប់រឿងនេះ', 'warn');
+        });
+      });
+
+      // Delegated clicks inside Video Management view
+      $('manageView').addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-act]');
+        if (!btn) return;
+        const act = btn.dataset.act;
+        if (act === 'open-drama') {
+          openDrama(btn.dataset.sid, { title: btn.dataset.title, titleKhmer: btn.dataset.khmer, cover: btn.dataset.cover });
+        } else if (act === 'watch-folder') {
+          safeRun(() => openFolderVideo(btn.dataset.folder, btn.dataset.sid, btn.dataset.title, false));
+        } else if (act === 'watch-full-folder') {
+          safeRun(() => openFolderVideo(btn.dataset.folder, btn.dataset.sid, btn.dataset.title, true));
+        } else if (act === 'watch-lib-ep') {
+          safeRun(() => openFolderVideo(btn.dataset.folder, btn.dataset.sid, btn.dataset.title, false, Number(btn.dataset.ep)));
+        } else if (act === 'watch-merged-part') {
+          safeRun(() => openFolderVideo(btn.dataset.folder, btn.dataset.sid, btn.dataset.title, true, null, btn.dataset.mergedFile || ''));
+        } else if (act === 'toggle-lib-eps') {
+          const fName = btn.dataset.folder;
+          if (state.expandedLibEps.has(fName)) state.expandedLibEps.delete(fName);
+          else state.expandedLibEps.add(fName);
+          renderManage();
+        } else if (act === 'merge-folder') {
+          safeRun(async () => {
+            const folder = btn.dataset.folder;
+            const libItem = state.library.find((x) => x.folder === folder);
+            let avail = libItem && Array.isArray(libItem.downloadedEps) ? libItem.downloadedEps : null;
+            let expectedTotal = libItem ? Number(libItem.expectedTotal || 0) : 0;
+            let title = libItem ? (libItem.titleKhmer || libItem.title || folder) : folder;
+            if (!avail || avail.length < 2) {
+              const epData = await api(`/api/library-episodes?folder=${encodeURIComponent(folder)}`);
+              if (!epData.success) { toast(epData.error || 'មិនអាចផ្ទុកភាគបានទេ', 'err'); return; }
+              avail = (epData.episodes || []).map((e) => e.epNum);
+              expectedTotal = Number((epData.meta && epData.meta.total) || expectedTotal || 0);
+              title = (epData.meta && (epData.meta.titleKhmer || epData.meta.title)) || title;
+            }
+            openMergeModal({ folder, seriesId: btn.dataset.sid || '', title, expectedTotal, availableEps: avail });
+          });
+        } else if (act === 'open-folder') {
+          safeRun(() => api('/api/open-folder', { method: 'POST', body: JSON.stringify({ folder: btn.dataset.folder }) }));
+        } else if (act === 'stop-job') {
+          safeRun(async () => {
+            const r = await api('/api/stop-download', { method: 'POST', body: JSON.stringify({ jobId: Number(btn.dataset.jobId) }) });
+            if (r.jobs) applyJobsPayload(r.jobs, r.summary);
+            toast('🛑 បានបញ្ឈប់ការទាញយក', 'warn');
+          });
+        } else if (act === 'dismiss-job') {
+          safeRun(async () => {
+            const r = await api('/api/dismiss-job', { method: 'POST', body: JSON.stringify({ jobId: Number(btn.dataset.jobId) }) });
+            if (r.jobs) applyJobsPayload(r.jobs, r.summary);
+          });
+        } else if (act === 'retry-job') {
+          const eps = String(btn.dataset.eps || '').split(',').map(Number).filter(Boolean);
+          safeRun(() => startDownload(eps, { seriesId: btn.dataset.sid }));
+        } else if (act === 'toggle-log') {
+          const id = String(btn.dataset.jobId);
+          if (state.expandedLogs.has(id)) state.expandedLogs.delete(id);
+          else state.expandedLogs.add(id);
+          renderManage();
+        } else if (act === 'delete-folder') {
+          state.pendingDelete = { folder: btn.dataset.folder, title: btn.dataset.title || btn.dataset.folder };
+          $('confirmDeleteMsg').textContent = `តើអ្នកពិតជាចង់លុបថតវីដេអូ "${state.pendingDelete.title}" ចេញពីកុំព្យូទ័រមែនទេ?`;
+          $('confirmDeleteModal').classList.add('show');
+        }
+      });
+
+      $('vmFilters').querySelectorAll('.vm-filter-btn').forEach((b) => {
+        b.addEventListener('click', () => {
+          state.vmFilter = b.dataset.filter;
+          $('vmFilters').querySelectorAll('.vm-filter-btn').forEach((x) => x.classList.toggle('active', x === b));
+          renderManage();
+        });
+      });
+      $('vmSearchInput').addEventListener('input', (e) => {
+        state.vmSearch = e.target.value || '';
+        renderManage();
+      });
+      $('btnAddMoreDramas').addEventListener('click', () => setView('browse'));
+      $('btnRefreshManage').addEventListener('click', () => safeRun(() => loadLibrary(false)));
+      $('btnPickFolderManage').addEventListener('click', pickSaveFolder);
+      $('btnOpenRootManage').addEventListener('click', () => safeRun(() => api('/api/open-folder', { method: 'POST', body: '{}' })));
+      function stopAllActiveJobs() {
+        return safeRun(async () => {
+          const r = await api('/api/stop-download', { method: 'POST', body: JSON.stringify({ all: true }) });
+          if (r.jobs) applyJobsPayload(r.jobs, r.summary);
+          toast('🛑 បានបញ្ឈប់ការទាញយកទាំងអស់', 'warn');
+        });
+      }
+      $('btnStopAllJobs').addEventListener('click', stopAllActiveJobs);
+      $('btnClearFinishedJobs').addEventListener('click', () => safeRun(async () => {
+        const r = await api('/api/dismiss-job', { method: 'POST', body: JSON.stringify({ clearFinished: true }) });
+        if (r.jobs) applyJobsPayload(r.jobs, r.summary);
+      }));
+
+      $('btnConfirmDeleteOk').addEventListener('click', () => safeRun(async () => {
+        const target = state.pendingDelete;
+        $('confirmDeleteModal').classList.remove('show');
+        state.pendingDelete = null;
+        if (!target) return;
+        const r = await api('/api/delete-library', { method: 'POST', body: JSON.stringify({ folder: target.folder }) });
+        if (!r.success) { toast(r.error || 'មិនអាចលុបបានទេ', 'err'); return; }
+        toast(`🗑️ បានលុប "${target.title}" រួចរាល់`, 'ok');
+        loadLibrary(true);
+      }));
+
+      $('btnOpenFolderTop').addEventListener('click', () => safeRun(() => api('/api/open-folder', { method: 'POST', body: '{}' })));
+      $('btnOpenDramaFolder').addEventListener('click', () => safeRun(() => api('/api/open-folder', { method: 'POST', body: JSON.stringify({ title: state.currentDrama ? state.currentDrama.title : '' }) })));
+      $('btnPickFolderInline').addEventListener('click', pickSaveFolder);
+
+      $('btnDownloadAll').addEventListener('click', () => safeRun(() => startDownload(missingList())));
+      $('btnRetryFailed').addEventListener('click', () => safeRun(() => startDownload(failedList())));
+      $('btnRetryStrip').addEventListener('click', () => safeRun(() => startDownload(failedList())));
+      $('btnStop').addEventListener('click', () => safeRun(async () => {
+        if (!state.currentDrama) return;
+        const r = await api('/api/stop-download', { method: 'POST', body: JSON.stringify({ seriesId: state.currentDrama.seriesId }) });
+        if (r.jobs) applyJobsPayload(r.jobs, r.summary);
+      }));
+      $('btnMerge').addEventListener('click', () => {
+        const d = state.currentDrama;
+        if (!d) return;
+        const readyEps = [];
+        for (let ep = 1; ep <= d.total; ep += 1) {
+          const l = liveState(ep);
+          if (l ? l.status === 'done' : state.downloaded.has(ep)) readyEps.push(ep);
+        }
+        openMergeModal({
+          seriesId: d.seriesId,
+          title: d.titleKhmer || d.title,
+          expectedTotal: d.total,
+          availableEps: readyEps
+        });
+      });
+
+      $('mergePresets').addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-merge-from]');
+        if (!btn || !state.mergeCtx) return;
+        const lo = Number(btn.dataset.mergeFrom);
+        const hi = Number(btn.dataset.mergeTo);
+        $('mergeFromInput').value = String(lo);
+        $('mergeToInput').value = String(hi);
+        state.mergeCtx.selectedSet = new Set(state.mergeCtx.availableEps.filter((ep) => ep >= lo && ep <= hi));
+        updateMergeModalView();
+      });
+
+      $('btnApplyMergeRange').addEventListener('click', () => {
+        if (!state.mergeCtx) return;
+        let a = Math.max(1, Number($('mergeFromInput').value) || 1);
+        let b = Math.max(1, Number($('mergeToInput').value) || 1);
+        if (a > b) [a, b] = [b, a];
+        $('mergeFromInput').value = String(a);
+        $('mergeToInput').value = String(b);
+        state.mergeCtx.selectedSet = new Set(state.mergeCtx.availableEps.filter((ep) => ep >= a && ep <= b));
+        updateMergeModalView();
+      });
+
+      $('mergeEpGrid').addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-merge-ep]');
+        if (!btn || !state.mergeCtx) return;
+        const ep = Number(btn.dataset.mergeEp);
+        if (state.mergeCtx.selectedSet.has(ep)) state.mergeCtx.selectedSet.delete(ep);
+        else state.mergeCtx.selectedSet.add(ep);
+        updateMergeModalView();
+      });
+
+      $('btnConfirmMerge').addEventListener('click', () => safeRun(confirmAndStartMerge));
+      $('btnPlayFull').addEventListener('click', openFullVideo);
+      $('chkAutoMerge').addEventListener('change', () => {
+        $('chkMultiAutoMerge').checked = $('chkAutoMerge').checked;
+        setPref('eza_autoMerge', $('chkAutoMerge').checked ? '1' : '0');
+      });
+      $('qualitySelect').addEventListener('change', () => {
+        setPref('eza_quality', $('qualitySelect').value);
+      });
+      $('workersSelect').addEventListener('change', () => {
+        setPref('eza_workers', $('workersSelect').value);
+      });
+
+      if ($('btnCopyGateHwid')) $('btnCopyGateHwid').addEventListener('click', copyMachineIdText);
+      if ($('btnCopySettingsHwid')) $('btnCopySettingsHwid').addEventListener('click', copyMachineIdText);
+      if ($('btnSubmitLicense')) $('btnSubmitLicense').addEventListener('click', submitLicenseKey);
+      if ($('gateLicenseInput')) {
+        $('gateLicenseInput').addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') submitLicenseKey();
+        });
+      }
+      if ($('btnSwitchLicenseKey')) {
+        $('btnSwitchLicenseKey').addEventListener('click', async () => {
+          try {
+            await fetch('/api/license/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'clear' })
+            });
+          } catch {}
+          $('settingsModal').classList.remove('show');
+          updateSettingsLicenseUi(null, true, licenseStatusState.machineId);
+          showLicenseGate('សូមបញ្ចូល License Key ថ្មីដើម្បីបន្តប្រើប្រាស់។');
+        });
+      }
+
+      $('btnToggleRange').addEventListener('click', () => $('rangeRow').classList.toggle('show'));
+      $('btnDownloadRange').addEventListener('click', () => {
+        const max = state.currentDrama ? state.currentDrama.total : 1;
+        let a = Math.max(1, Number($('rangeFrom').value) || 1);
+        let b = Math.min(max, Number($('rangeTo').value) || max);
+        if (a > b) [a, b] = [b, a];
+        const eps = [];
+        for (let i = a; i <= b; i++) eps.push(i);
+        startDownload(eps);
+      });
+
+      $('btnDownloadSel').addEventListener('click', () => startDownload(Array.from(state.selected)));
+      $('btnClearSel').addEventListener('click', () => { state.selected.clear(); renderEpisodes(); syncFloatingBars(); });
+      $('btnToggleLogs').addEventListener('click', () => $('logsBox').classList.toggle('show'));
+
+      document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => $(b.dataset.close).classList.remove('show')));
+      $('btnSettings').addEventListener('click', () => { $('folderInput').value = state.downloadDir || ''; $('settingsModal').classList.add('show'); });
+      $('btnBrowseFolder').addEventListener('click', pickSaveFolder);
+      $('btnSaveSettings').addEventListener('click', () => safeRun(async () => {
+        const d = $('folderInput').value.trim();
+        const k = $('geminiInput').value.trim();
+        if (d && d !== state.downloadDir) {
+          const r = await api('/api/download-dir', { method: 'POST', body: JSON.stringify({ path: d }) });
+          if (!r.success) { toast(r.error || 'ផ្លូវថតមិនត្រឹមត្រូវ', 'err'); return; }
+          state.downloadDir = r.path;
+          $('savePathLabel').textContent = r.path;
+          $('vmPathLabel').textContent = r.path;
+        }
+        if (k) {
+          await api('/api/config', { method: 'POST', body: JSON.stringify({ apiKey: k }) });
+          $('geminiInput').value = '';
+        }
+        await loadConfig();
+        loadLibrary(true);
+        $('settingsModal').classList.remove('show');
+        toast('បានរក្សាទុកការកំណត់ ✓', 'ok');
+        if (state.currentDrama && d) openDrama(state.currentDrama.seriesId, {}, true, false);
+      }));
+
+      $('btnCloseVideo').addEventListener('click', closeVideo);
+      $('videoModal').addEventListener('click', (e) => { if (e.target === $('videoModal')) closeVideo(); });
+      $('videoEpStrip').addEventListener('click', (e) => {
+        const fullBtn = e.target.closest('[data-play-full]');
+        if (fullBtn && state.playerCtx) {
+          playContextMerged(fullBtn.dataset.playFull || '');
+          return;
+        }
+        const epBtn = e.target.closest('[data-play-ep]');
+        if (epBtn) playContextEp(Number(epBtn.dataset.playEp));
+      });
+      $('btnWatchFullInModal').addEventListener('click', () => playContextMerged(''));
+      $('btnPrevEp').addEventListener('click', () => {
+        const list = (state.playerCtx && state.playerCtx.eps && state.playerCtx.eps.length)
+          ? state.playerCtx.eps
+          : Array.from(state.downloaded).sort((a, b) => a - b);
+        const cur = state.playerCtx ? state.playerCtx.currentEp : state.previewEp;
+        const i = list.indexOf(cur);
+        if (i > 0) playContextEp(list[i - 1]);
+      });
+      $('btnNextEp').addEventListener('click', () => {
+        const list = (state.playerCtx && state.playerCtx.eps && state.playerCtx.eps.length)
+          ? state.playerCtx.eps
+          : Array.from(state.downloaded).sort((a, b) => a - b);
+        const cur = state.playerCtx ? state.playerCtx.currentEp : state.previewEp;
+        const i = list.indexOf(cur);
+        if (i >= 0 && i < list.length - 1) playContextEp(list[i + 1]);
+      });
+      $('btnRedownloadEp').addEventListener('click', () => {
+        const ep = state.previewEp;
+        const sid = state.playerCtx && state.playerCtx.seriesId;
+        closeVideo();
+        if (ep && sid) startDownload([ep], { seriesId: sid, title: state.playerCtx.title });
+      });
+
+      boot();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "workerUrl": "https://eza-pro-license-admin.koeurnseab630.workers.dev",
+  "appId": "downloader",
+  "publicKeyJwk": {
+    "kty": "EC",
+    "x": "Q5FOHmFfFJkijZGOpYRm6zMCr7ZHbV_TWV-RW_p7S4o",
+    "y": "v6kuk1SVImech57V-s19OtdbjrHL418vPPMevoUjyiE",
+    "crv": "P-256"
+  },
+  "enforceInPackaged": true,
+  "offlineGraceHours": 12
+}
+

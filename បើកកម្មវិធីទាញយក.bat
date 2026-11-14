@@ -1,14 +1,13 @@
 @echo off
 chcp 65001 >nul
-title HDRG Pro Plus Studio - All-in-One Downloader & Dubbing
+title EZA PRO Downloader
 cd /d "%~dp0"
 
 echo ================================================================
-echo   🎬 HDRG PRO PLUS STUDIO v3.5 (All-in-One Downloader & Dubbing)
+echo   🎬 EZA PRO DOWNLOADER (Multi-Platform Short Drama Downloader)
 echo   • 50+ Platforms (Hongguo, DramaBox, ReelShort, Douyin, TikTok...)
-echo   • Multi-Worker Grid Downloader (EP01..EP80)
-echo   • Auto Khmer AI Dubbing & Khmer Subtitle (.srt)
-echo   កំពុងបើកដំណើរការ Studio...
+echo   • Multi-Worker Grid Downloader + Auto Movie Merge
+echo   កំពុងបើកដំណើរការកម្មវិធី...
 echo ================================================================
 
 start /b "" node ui_server.js

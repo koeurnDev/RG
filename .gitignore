@@ -1,3 +1,8 @@
+# Build output & Desktop runtime state
+dist/
+cloud-license-state.json
+LICENSE.txt
+
 # Dependencies
 node_modules/
 **/node_modules/
@@ -23,12 +28,15 @@ hongguo-downloader-*.exe
 *.jpg
 *.jpeg
 *.png
+!build/icon.png
 *.webp
 *.gif
 *.srt
 *.svg
 
-# Temporary files & downloaded drama folders
+# Temporary files & backup / downloaded drama folders
+*.bak
+ui_server.js.bak
 装穷提亲，娶到全家嫌弃的她/
 一念沉沦，霍总心动了/
 **/temp_*
