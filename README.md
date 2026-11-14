@@ -20,7 +20,7 @@
 
 ### ខ. សម្រាប់អ្នកអភិវឌ្ឍ / ម្ចាស់ប្រព័ន្ធ (Dev, Build `.exe`, និង Host Admin)
 - **Node.js**: កំណែ `v20+` ឬ `v22.12+` (`npm` រួមបញ្ចូលស្រាប់)
-- **Git**: សម្រាប់ Push/Pull កូដ GitHub (`https://github.com/koeurnDev/RG.git`)
+- **Git**: សម្រាប់ Push/Pull កូដ GitHub (`RG.git` សម្រាប់ Downloader: `https://github.com/koeurnDev/RG.git` និង `EZA-PRO.git` សម្រាប់ Studio & Cloud Admin: `https://github.com/koeurnDev/EZA-PRO.git`)
 - **Cloudflare Account + Wrangler CLI** (`npx wrangler`): សម្រាប់ Run/Deploy Cloud License Worker និង D1 Database (`eza-pro-licenses`)
 - **Binary Tools ក្នុង `D:\EZA_PRO\bin\`** *(មិនត្រូវ Push ចូល GitHub ទេ ព្រោះទំហំធំ)*:
   - `ffmpeg.exe`
