@@ -59,6 +59,7 @@
         "filter": [
           "ffmpeg.exe",
           "ffprobe.exe",
+          "librempeg.exe",
           "yt-dlp.exe",
           "aria2c.exe",
           "N_m3u8DL-RE.exe"

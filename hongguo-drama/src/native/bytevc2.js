@@ -1,5 +1,5 @@
 const fs = require('node:fs/promises');
-const { removeOwnedFile, isOwnedFile } = require('./download-temporary');
+const { removeOwnedFile, reserveOwnedFile } = require('./download-temporary');
 
 // Downloads and both prefetched episodes share one CPU budget; never restart an active conversion.
 const waiting = [];
@@ -36,40 +36,51 @@ function acquire(signal, cancelToken, getPriority) {
   });
 }
 
-async function convertBytevc2({ executable, input, output, contentKey, duration, signal, cancelToken, onProgress, onPhase, onOutputCreated, maxBytes = Infinity, getPriority = () => 0 }) {
+async function convertBytevc2({ executable, input, output, contentKey, duration, signal, cancelToken, onProgress, onPhase, onOutputCreated, reserveOutput, maxBytes = Infinity, getPriority = () => 0, fastConversion = false }) {
   const cancelled = () => signal?.aborted || cancelToken?.reason;
   if (cancelled()) throw abortError();
-  if (!executable) throw new Error('未找到内置 ByteVC2 解码组件，请重新下载完整版本后重试');
+  if (!executable) throw Object.assign(new Error('未找到内置 ByteVC2 解码组件，请重新下载完整版本后重试'), { code:'LOCAL_MEDIA_TOOL_ERROR' });
   if (contentKey != null && !/^[a-f\d]{32}$/i.test(contentKey)) throw new Error('片源解密密钥格式无效');
   if (!Number.isFinite(duration) || duration <= 0 || !(maxBytes > 0) || input === output) throw new Error('ByteVC2 视频参数无效');
   if (converting || waiting.length) onPhase?.('queued');
   const release = await acquire(signal, cancelToken, getPriority);
   try {
     if (cancelled()) throw abortError();
-    onPhase?.('transcoding');
-    let identity;
+    let identity, reservation, ownsReservation = false;
     const checkOutput = async () => {
-      if (!await isOwnedFile(output, identity)) throw Object.assign(new Error('视频转换临时文件已变化，已有文件已保留，请重试'), { code: 'EEXIST' });
+      await reservation.check();
     };
     try {
-      const file = await fs.open(output, 'wx', 0o600);
-      try {
-        identity = await file.stat();
-        onOutputCreated?.(identity);
-      } finally { await file.close(); }
+      if (reserveOutput) reservation = await reserveOutput();
+      else {
+        ownsReservation = true;
+        reservation = await reserveOwnedFile(output, stat => {
+          identity = stat;
+          onOutputCreated?.(identity);
+        });
+      }
       if (cancelled()) throw abortError();
-      const encoders = process.platform === 'darwin' && process.arch === 'arm64'
-        ? ['h264_videotoolbox', 'libx264'] : ['libx264'];
+      const inputArgs = [...(contentKey ? ['-decryption_key', contentKey] : []), '-i', input];
+      const hardware = fastConversion ? await require('./hardware-encoder').pickHardwareEncoder({ executable, inputArgs, signal, cancelToken }) : null;
+      if (cancelled()) throw abortError();
+      const hardwareEncoder = fastConversion ? hardware?.encoder : process.platform === 'darwin' && process.arch === 'arm64' ? 'h264_videotoolbox' : null;
+      const encoders = hardwareEncoder ? [hardwareEncoder, 'libx264'] : ['libx264'];
+      const decoderThreads = fastConversion ? 4 : 2;
+      let hardwareFallbackReason = fastConversion && !hardwareEncoder ? 'unavailable' : null;
       for (const encoder of encoders) {
         try {
           if (cancelled()) throw abortError();
           let seconds = 0, diagnostics = '', terminalFailure = false;
-          const videoArgs = encoder === 'h264_videotoolbox'
+          const metadata = { encoder, fastConversion, decoderThreads, hardwareFallbackReason };
+          onPhase?.('transcoding', metadata);
+          const videoArgs = fastConversion && encoder !== 'libx264'
+            ? require('./hardware-encoder').hardwareEncoderArgs(encoder)
+            : encoder === 'h264_videotoolbox'
             ? ['-c:v', encoder, '-allow_sw', '0', '-realtime', '0', '-q:v', '68', '-profile:v', 'high', '-pix_fmt', 'yuv420p', '-threads:v', '2']
             : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
               '-threads:v', '2', '-x264-params', 'lookahead_threads=1'];
           const args = ['-y', '-hide_banner', '-loglevel', 'error', '-xerror', '-protocol_whitelist', 'file,pipe',
-            '-filter_threads', '1', '-threads:v', '2', ...(contentKey ? ['-decryption_key', contentKey] : []), '-i', input,
+            '-filter_threads', '1', '-threads:v', String(decoderThreads), ...inputArgs,
             '-map', '0:v:0', '-map', '0:a?', ...videoArgs,
             '-c:a', 'copy', '-movflags', '+faststart', '-progress', 'pipe:1', '-nostats',
             ...(Number.isFinite(maxBytes) ? ['-fs', String(maxBytes)] : []), '-f', 'mp4', output];
@@ -101,14 +112,14 @@ async function convertBytevc2({ executable, input, output, contentKey, duration,
               diagnostics = (diagnostics + data.toString()).slice(-65536);
               terminalFailure ||= /No space left|Permission denied|Input\/output error|Disk quota|Read-only file system|File too large|Cannot allocate memory|Out of memory|Invalid data found|Error while decoding|Error submitting packet|corrupt|decryption/i.test(diagnostics);
             });
-            child.once('error', () => { cleanup(); reject(new Error('无法启动内置 ByteVC2 解码组件')); });
+            child.once('error', cause => { cleanup(); reject(Object.assign(new Error('无法启动内置 ByteVC2 解码组件'), { code:'LOCAL_MEDIA_TOOL_ERROR', cause })); });
             child.once('close', code => {
               cleanup();
               if (stopping || cancelled()) reject(abortError());
               else if (code !== 0) reject(Object.assign(new Error('ByteVC2 转码失败，请重新获取片源后重试'), {
                 code: 'BYTEVC2_CONVERSION_FAILED',
-                hardwareEncoderFailed: encoder === 'h264_videotoolbox' && !terminalFailure
-                  && /Unknown encoder.*h264_videotoolbox|(?:cannot|failed to) create.*compression session|h264_videotoolbox[^\n]*(?:error|failed)|Error while opening encoder/i.test(diagnostics),
+                hardwareEncoderFailed: encoder !== 'libx264' && !terminalFailure
+                  && /Unknown encoder.*h264_(?:videotoolbox|nvenc|amf)|(?:cannot|failed to) create.*compression session|h264_(?:videotoolbox|nvenc|amf)[^\n]*(?:error|failed)|Error while opening encoder|Cannot load (?:nvcuda|libcuda|nvEncodeAPI|libnvidia-encode|amfrt64)|No capable devices found|Driver does not support|minimum required Nvidia driver|AMF[^\n]*(?:not available|not supported|failed|error)|CreateComponent[^\n]*(?:failed|null)/i.test(diagnostics),
               }));
               else resolve();
             });
@@ -121,19 +132,29 @@ async function convertBytevc2({ executable, input, output, contentKey, duration,
           const size = (await fs.stat(output)).size;
           if (size >= maxBytes) throw Object.assign(new Error('本集转码后过大，请下载后播放'), { code: 'MEDIA_TOO_LARGE' });
           if (!size || seconds < duration - 1) throw new Error('ByteVC2 转码结果不完整，请重试本集');
-          return { codec: 'h264', size, encoder };
+          return { codec: 'h264', size, ...metadata };
         } catch (error) {
-          if (encoder !== 'h264_videotoolbox' || cancelled()
+          if (encoder === 'libx264' || cancelled()
             || !(error.hardwareEncoderFailed || error.code === 'MEDIA_TOO_LARGE')) throw error;
+          hardwareFallbackReason = error.code === 'MEDIA_TOO_LARGE' ? 'output-too-large' : 'encoder-failed';
           await checkOutput();
           await fs.truncate(output, 0);
           onProgress?.(0);
         }
       }
     } catch (error) {
-      if (identity) await removeOwnedFile(output, identity).catch(() => {});
+      if (reservation) await reservation.remove().catch(() => {});
+      else if (identity) await removeOwnedFile(output, identity).catch(() => {});
       if (error.code === 'EEXIST') throw Object.assign(new Error('视频转换临时文件发生冲突，已有文件已保留，请重试'), { code: 'EEXIST' });
       throw error;
+    } finally {
+      if (ownsReservation) {
+        try { await reservation?.close(); }
+        catch (error) {
+          if (identity) await removeOwnedFile(output, identity).catch(() => {});
+          throw error;
+        }
+      }
     }
   } finally { release(); }
 }

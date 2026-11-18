@@ -256,6 +256,24 @@
       padding: 3px 8px;
       border-radius: 7px;
     }
+    .poster-new-badge {
+      position: absolute;
+      bottom: 8px;
+      left: 8px;
+      z-index: 2;
+      padding: 3px 7px;
+      border-radius: 7px;
+      font-size: 11px;
+      font-weight: 700;
+      background: rgba(245, 158, 11, 0.92);
+      color: #1c1001;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+      pointer-events: none;
+    }
+    .poster-new-badge.today {
+      background: linear-gradient(135deg, #f97316, #ec4899);
+      color: #fff;
+    }
     .poster-title {
       font-size: 13.5px;
       font-weight: 600;
@@ -384,7 +402,7 @@
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(66px, 1fr));
       gap: 8px;
-      max-height: 480px;
+      max-height: 215px;
       overflow-y: auto;
       padding: 2px;
     }
@@ -1066,9 +1084,21 @@
 
       <!-- HERO -->
       <div class="card hero">
-        <img id="heroCover" class="hero-cover" src="" referrerpolicy="no-referrer" alt="" />
+        <div style="display: flex; flex-direction: column; gap: 8px; align-items: stretch; flex-shrink: 0; width: 120px;">
+          <img id="heroCover" class="hero-cover" src="" referrerpolicy="no-referrer" alt="" />
+          <button id="btnDownloadCover" class="btn btn-xs" style="border-color: rgba(56, 189, 248, 0.45); color: #38bdf8;" title="ទាញយករូប Poster រឿងជាឯកសារ JPG">🖼️ ទាញយក Cover</button>
+        </div>
         <div class="hero-info">
-          <h1 id="heroTitle" class="hero-title">—</h1>
+          <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 220px;">
+              <h1 id="heroTitle" class="hero-title">—</h1>
+              <div id="heroOriginalTitle" style="font-size: 13px; color: var(--muted); margin-top: 3px;"></div>
+            </div>
+            <div style="display: flex; gap: 6px; align-items: center; flex-shrink: 0;">
+              <button id="btnAITranslate" class="btn btn-xs btn-amber" title="បកប្រែចំណងជើងជាភាសាខ្មែរដោយ AI ឱ្យកាន់តែត្រូវអត្ថន័យ">✨ AI បកប្រែ</button>
+              <button id="btnEditTitle" class="btn btn-xs" title="កែសម្រួលចំណងជើងខ្មែរ">✏️ កែឈ្មោះ</button>
+            </div>
+          </div>
           <div id="heroStats" class="hero-sub">សរុប 0 ភាគ</div>
           <div class="hero-path">
             <span>📁 រក្សាទុកក្នុង៖</span>
@@ -1078,10 +1108,12 @@
 
           <div class="hero-btns">
             <button id="btnDownloadAll" class="btn btn-primary">⬇️ ទាញយកទាំងអស់</button>
+            <button id="btnFindFullMovie" class="btn btn-amber" style="display: none;">🔓 រករឿងពេញឥតគិតថ្លៃ (Full Movie)</button>
             <button id="btnRetryFailed" class="btn btn-amber" style="display: none;">🔄 ទាញភាគបរាជ័យឡើងវិញ</button>
             <button id="btnStop" class="btn btn-danger" style="display: none;">⏹️ បញ្ឈប់</button>
             <button id="btnMerge" class="btn">🎞️ ផ្គុំជា ១ វីដេអូ</button>
             <button id="btnPlayFull" class="btn" style="display: none; border-color: rgba(16, 185, 129, 0.5); color: #34d399;">▶️ មើលរឿងពេញ</button>
+            <button id="btnDownloadCoverHd" class="btn" title="ទាញយករូបក្របរឿងគុណភាពច្បាស់កំពូល (Ultra-HD Cover.jpg)">🖼️ ទាញក្រប HD</button>
             <button id="btnOpenDramaFolder" class="btn">📂 បើកថត</button>
           </div>
         </div>
@@ -1101,10 +1133,40 @@
 
         <div id="progErrorBar" class="prog-error-bar">
           <span id="progErrorText">មានភាគបរាជ័យ</span>
-          <button id="btnRetryStrip" class="btn btn-amber btn-xs">🔄 សាកទាញឡើងវិញ</button>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button id="btnRepairAndRetry" class="btn btn-xs" title="ភ្ជាប់ប្រព័ន្ធ Server ថ្មី រួចទាញភាគបរាជ័យឡើងវិញ">🔧 ជួសជុល &amp; ទាញម្ដងទៀត</button>
+            <button id="btnRetryStrip" class="btn btn-amber btn-xs">🔄 សាកទាញឡើងវិញ</button>
+          </div>
         </div>
 
         <div id="logsBox" class="logs-box"></div>
+      </div>
+
+      <!-- FULL MOVIE MIRROR FINDER & VIP TOKEN CARD (FOR LOCKED VIP DRAMAS) -->
+      <div id="fullMovieFinderCard" class="card" style="display: none; border-color: rgba(245, 158, 11, 0.38); background: linear-gradient(180deg, rgba(245, 158, 11, 0.08), rgba(15, 23, 42, 0.92));">
+        <div class="ep-head" style="margin-bottom: 12px;">
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <strong style="font-size: 15px; color: #fde68a;">🔓 ដំណោះស្រាយភាគជាប់សោ VIP — វីដេអូរឿងពេញឥតគិតថ្លៃ (<span id="fullMovieCountLabel">0</span>)</strong>
+            <span class="vm-badge warn">Full Movie • Dailymotion / YouTube</span>
+          </div>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <button id="btnToggleVipTokenBar" type="button" class="btn btn-xs">🔑 ដាក់ DramaBox VIP Token</button>
+            <button id="btnRefreshFullMovie" type="button" class="btn btn-xs btn-amber">🔄 ស្វែងរករឿងពេញម្ដងទៀត</button>
+          </div>
+        </div>
+
+        <div id="vipTokenBar" style="display: none; margin-bottom: 12px; padding: 10px 12px; background: rgba(15, 23, 42, 0.85); border: 1px solid var(--border); border-radius: 10px;">
+          <div style="font-size: 12px; color: var(--muted); margin-bottom: 6px;">
+            ប្រសិនបើបងមានគណនី VIP ក្នុងកម្មវិធី DramaBox អាចបញ្ចូល <code style="color:#7dd3fc;">Bearer Token</code> ផ្ទាល់ខ្លួនដើម្បីដោះសោគ្រប់ភាគ 1080p <span id="vipTokenStatusBadge" style="color:#34d399; font-weight:700;"></span>៖
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <input id="vipTokenInput" type="text" placeholder="បិទភ្ជាប់ DramaBox Bearer Token (eyJ0eXAiOiJKV1Q...) រួចចុចរក្សាទុក" style="flex: 1; min-width: 220px; font-size: 12.5px; padding: 6px 10px;" />
+            <button id="btnSaveVipToken" type="button" class="btn btn-primary btn-xs">💾 រក្សាទុក Token</button>
+            <button id="btnClearVipToken" type="button" class="btn btn-ghost btn-xs">🧹 លុប Token</button>
+          </div>
+        </div>
+
+        <div id="fullMovieGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px;"></div>
       </div>
 
       <!-- EPISODES -->
@@ -1126,6 +1188,22 @@
         </div>
 
         <div id="epGrid" class="ep-grid"></div>
+      </div>
+
+      <!-- RELATED / SIMILAR DRAMAS RECOMMENDATION SECTION -->
+      <div id="relatedDramasCard" class="card">
+        <div class="ep-head" style="margin-bottom: 16px;">
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <strong style="font-size: 16px;">✨ រឿងប្រហាក់ប្រហែលដែលអ្នកអាចចូលចិត្ត (<span id="relatedCountLabel">0</span>)</strong>
+            <span id="relatedTagBadge" class="vm-badge active" style="display: none;"></span>
+          </div>
+          <button id="btnRefreshRelated" type="button" class="btn btn-xs">🔄 ប្ដូររឿងណែនាំថ្មី</button>
+        </div>
+        <div id="relatedDramaGrid" class="poster-grid"></div>
+        <div id="relatedScrollLoader" style="display:none; padding:18px; text-align:center; color:var(--muted); font-size:13px;">
+          <div class="spinner" style="width:18px; height:18px; border-width:2px; margin:0 auto 8px;"></div>
+          កំពុងផ្ទុករឿងប្រហាក់ប្រហែលបន្ថែម...
+        </div>
       </div>
     </section>
 
@@ -1228,10 +1306,11 @@
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
           <div class="field">
-            <label>🎞️ គុណភាពវីដេអូ</label>
+            <label>🎞️ គុណភាពវីដេអូ &amp; ការសន្សំ Data</label>
             <select id="qualitySelect">
-              <option value="fast">⚡ លឿន (Fast HD)</option>
-              <option value="1080p">💎 ច្បាស់ 1080p</option>
+              <option value="fast">⚡ 1080p Smart HD (ច្បាស់កំពូល 1080p • ដោនលឿន &amp; សន្សំ Data)</option>
+              <option value="1080p">💎 1080p Max Bitrate (ច្បាស់កំពូល 1080p • Bitrate ខ្ពស់បំផុត)</option>
+              <option value="720p">📱 720p Eco (សម្រាប់អ៊ីនធឺណិតខ្សោយបំផុត)</option>
             </select>
           </div>
           <div class="field">
@@ -1263,6 +1342,17 @@
             data-lpignore="true"
             data-form-type="other"
           />
+        </div>
+
+        <div style="padding:10px 12px; background:rgba(56,189,248,0.07); border:1px solid rgba(56,189,248,0.28); border-radius:11px; display:flex; flex-direction:column; gap:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+            <span style="font-size:12.5px; font-weight:700; color:#7dd3fc;">🛠️ ជួសជុល &amp; អាប់ដេតប្រព័ន្ធទាញយក</span>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <button id="btnRepairEngine" type="button" class="btn btn-xs">🔧 ជួសជុលការភ្ជាប់ Server</button>
+              <button id="btnUpdateYtdlp" type="button" class="btn btn-xs btn-amber">⬆️ អាប់ដេត yt-dlp</button>
+            </div>
+          </div>
+          <div id="repairEngineStatus" style="font-size:11.5px; color:var(--muted);">ប្រើនៅពេលទាញវីដេអូយឺត ឬលោត Error ពី Server ដើម</div>
         </div>
 
         <div id="settingsLicenseBox" style="display:none; padding:10px 12px; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.32); border-radius:11px; flex-direction:column; gap:6px;">
@@ -1341,6 +1431,16 @@
         <div class="field">
           <label>🎬 ភាគដែលនឹងផ្គុំតាមលំដាប់ (<span id="mergeSelCount">0</span> ភាគ — ចុចរើស/ដកតាមភាគបាន)</label>
           <div id="mergeEpGrid" class="merge-ep-grid"></div>
+        </div>
+
+        <div class="field" style="margin-top:8px;">
+          <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:12px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.28);cursor:pointer;">
+            <input type="checkbox" id="chkCompressMerge" style="margin-top:3px;width:16px;height:16px;accent-color:#10b981;cursor:pointer;" />
+            <div style="flex:1;line-height:1.45;">
+              <div style="font-weight:700;color:#6ee7b7;font-size:13px;">🗜️ បង្ហាប់ទំហំឱ្យស្រាល (Telegram &amp; Web Ready)</div>
+              <div style="font-size:11.5px;color:#94a3b8;margin-top:2px;">បន្ថយទំហំ File ឱ្យតូចស្រាល (~300–500 MB/ម៉ោង) ងាយស្រួលបង្ហោះ Telegram &amp; Web ដោយរក្សារូបភាពច្បាស់ល្អ (ចំណាយពេល Encode បន្តិច)</div>
+            </div>
+          </label>
         </div>
 
         <div id="mergePreviewBox" class="merge-preview-box"></div>
@@ -1428,11 +1528,18 @@
     (() => {
       const HONGGUO_CATEGORIES = [
         { id: 'trending', label: '🔥 ពេញនិយម' },
-        { id: 'romance', label: 'ស្នេហា' },
-        { id: 'ceo', label: 'លោកប្រធាន' },
-        { id: 'comeback', label: 'សងសឹក' },
-        { id: 'costume', label: 'បុរាណ' },
-        { id: 'sad', label: 'កម្សត់' }
+        { id: 'new', label: '🆕 ចេញថ្មីៗ' },
+        { id: 'anime', label: '🎨 តុក្កតា / 漫剧' },
+        { id: 'ai_anime', label: '🤖 តុក្កតា 3D / AI' },
+        { id: 'sad', label: '😭 កម្សត់' },
+        { id: 'sweet', label: '💖 ផ្អែមល្ហែម' },
+        { id: 'romance', label: '🌹 ស្នេហា' },
+        { id: 'ceo', label: '👑 លោកប្រធាន' },
+        { id: 'comeback', label: '⚔️ សងសឹក' },
+        { id: 'costume', label: '⏳ បុរាណ/ឆ្លងភព' },
+        { id: 'comedy', label: '🎭 កំប្លែង' },
+        { id: 'family', label: '👨‍👩‍👧 គ្រួសារ' },
+        { id: 'suspense', label: '🔍 អាថ៌កំបាំង' }
       ];
 
       const DEFAULT_SOURCES = [
@@ -1456,6 +1563,8 @@
         searchQuery: '',
         mode: 'catalog',
         currentDrama: null,
+        relatedDramas: [],
+        relatedPage: 1,
         downloaded: new Set(),
         broken: new Set(),
         lockedEps: new Set(),
@@ -1915,6 +2024,7 @@
           cover: d.cover,
           total: Number(d.total) || 0,
           autoMerge: $('chkAutoMerge').checked,
+          compressMerge: Boolean($('chkCompressMerge')?.checked),
           workers: Number($('workersSelect').value) || 8,
           qualityMode: $('qualitySelect').value || 'fast'
         };
@@ -1979,7 +2089,7 @@
       }
 
       function patchBrowseCardStatuses() {
-        const cards = $('dramaGrid').querySelectorAll('.poster-card');
+        const cards = document.querySelectorAll('#dramaGrid .poster-card, #relatedDramaGrid .poster-card');
         if (!cards.length) return;
         cards.forEach((card) => {
           const cs = getDramaCardState(getDramaPayloadFromCard(card));
@@ -2004,29 +2114,265 @@
         });
       }
 
+      const CHINESE_CHAR_RE = /[\u3400-\u9fff]/;
+      let autoTranslateTimer = null;
+      let autoTranslateRunning = false;
+      let autoTranslatePendingRescan = false;
+      let autoTranslatePausedUntil = 0;
+      const inflightTranslations = new Set();
+      const translateFailCounts = new Map();
+
+      function syncClientDramaKhmerTitle(seriesId, origTitle, newKhmer) {
+        if (!origTitle || !newKhmer) return;
+        const sid = seriesId ? String(seriesId) : '';
+        const applyList = (arr) => {
+          if (!Array.isArray(arr)) return;
+          for (const item of arr) {
+            if (item && (item.title === origTitle || (sid && String(item.seriesId || item.id) === sid))) {
+              item.titleKhmer = newKhmer;
+            }
+          }
+        };
+        applyList(state.dramas);
+        applyList(state.matches);
+        applyList(state.relatedDramas);
+        applyList(state.library);
+        if (state.currentDrama && (state.currentDrama.title === origTitle || (sid && String(state.currentDrama.seriesId) === sid))) {
+          state.currentDrama.titleKhmer = newKhmer;
+        }
+        document.querySelectorAll('#dramaGrid .poster-card, #relatedDramaGrid .poster-card').forEach((card) => {
+          if (card.dataset.title === origTitle || (sid && String(card.dataset.id) === sid)) {
+            card.dataset.khmer = newKhmer;
+            const titleEl = card.querySelector('.poster-title');
+            if (titleEl) {
+              titleEl.textContent = newKhmer;
+              titleEl.title = `${origTitle} (ឈ្មោះចិនដើម)`;
+            }
+          }
+        });
+        if (state.view === 'manage') renderManage();
+      }
+
+      function queueCardsAutoTranslation(delayMs = 250) {
+        clearTimeout(autoTranslateTimer);
+        autoTranslateTimer = setTimeout(runAutoTranslateVisibleCards, delayMs);
+      }
+
+      async function runAutoTranslateVisibleCards() {
+        if ((state.view !== 'browse' && state.view !== 'drama') || Date.now() < autoTranslatePausedUntil) return;
+        if (autoTranslateRunning) {
+          autoTranslatePendingRescan = true;
+          return;
+        }
+        autoTranslatePendingRescan = false;
+        const activeGrid = state.view === 'drama' ? $('relatedDramaGrid') : $('dramaGrid');
+        if (!activeGrid) return;
+        const cards = activeGrid.querySelectorAll('.poster-card');
+        if (!cards.length) return;
+
+        const visibleTitles = [];
+        const offscreenTitles = [];
+        const seen = new Set();
+        const vh = window.innerHeight || 900;
+
+        cards.forEach((card) => {
+          const title = card.dataset.title || '';
+          const khmer = card.dataset.khmer || '';
+          if (!title || seen.has(title) || !CHINESE_CHAR_RE.test(title)) return;
+          if (!khmer || khmer === title || CHINESE_CHAR_RE.test(khmer)) {
+            if (inflightTranslations.has(title) || (translateFailCounts.get(title) || 0) >= 2) return;
+            seen.add(title);
+            const rect = card.getBoundingClientRect();
+            const isNearViewport = rect.bottom >= -300 && rect.top <= vh + 600;
+            if (isNearViewport) visibleTitles.push(title);
+            else offscreenTitles.push(title);
+          }
+        });
+
+        const ordered = [...visibleTitles, ...offscreenTitles];
+        if (!ordered.length) return;
+
+        const batch = ordered.slice(0, 15);
+        const remainingCount = ordered.length - batch.length;
+        batch.forEach((t) => inflightTranslations.add(t));
+        autoTranslateRunning = true;
+
+        let translatedCount = 0;
+        let hasKey = true;
+        try {
+          const res = await api('/api/batch-translate', {
+            method: 'POST',
+            body: JSON.stringify({ titles: batch })
+          });
+          if (res && res.hasKey === false) hasKey = false;
+
+          if (res && res.success && res.translations) {
+            const translations = res.translations;
+            for (const orig of batch) {
+              const kh = translations[orig];
+              if (kh && kh !== orig) {
+                translatedCount += 1;
+                translateFailCounts.delete(orig);
+                syncClientDramaKhmerTitle('', orig, kh);
+              } else {
+                translateFailCounts.set(orig, (translateFailCounts.get(orig) || 0) + 1);
+              }
+            }
+          } else {
+            batch.forEach((t) => translateFailCounts.set(t, (translateFailCounts.get(t) || 0) + 1));
+          }
+        } catch (_) {
+          batch.forEach((t) => translateFailCounts.set(t, (translateFailCounts.get(t) || 0) + 1));
+        } finally {
+          batch.forEach((t) => inflightTranslations.delete(t));
+          autoTranslateRunning = false;
+        }
+
+        if (!hasKey && translatedCount === 0) {
+          autoTranslatePausedUntil = Date.now() + 60000;
+          autoTranslatePendingRescan = false;
+          return;
+        }
+
+        const shouldContinue = (remainingCount > 0 && translatedCount > 0) || (autoTranslatePendingRescan && hasKey);
+        autoTranslatePendingRescan = false;
+        if (shouldContinue) {
+          queueCardsAutoTranslation(350);
+        }
+      }
+
+      function buildPosterCardHtml(d) {
+        const cs = getDramaCardState(d);
+        const showSrcTag = d.source && d.source !== 'hongguo' && state.source !== d.source;
+        return `
+          <div class="poster-card ${cs.isPicked ? 'is-picked' : ''}" role="button" tabindex="0" data-id="${esc(d.id)}" data-title="${esc(d.title)}" data-khmer="${esc(d.titleKhmer || '')}" data-cover="${esc(d.cover || '')}" data-total="${esc(d.total || 0)}">
+            <div class="poster-img-box">
+              <img src="${esc(d.cover || '')}" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.opacity='0.2'" alt="" />
+              <span class="poster-status-pill${cs.pillClass ? ' ' + cs.pillClass : ''}" data-role="pill" style="display:${cs.pillText ? 'inline-block' : 'none'}">${esc(cs.pillText)}</span>
+              ${showSrcTag ? `<span class="poster-src-tag">${esc(d.source)}</span>` : ''}
+              <button type="button" class="poster-pick-chk" data-card-pick="${esc(d.id)}" aria-pressed="${cs.isPicked ? 'true' : 'false'}" title="រើសរឿងនេះដើម្បីទាញព្រមគ្នាច្រើនរឿង">${cs.isPicked ? '✓' : '☐'}</button>
+              ${d.releasedToday ? '<span class="poster-new-badge today">🆕 ថ្ងៃនេះ</span>' : (d.isNewRelease ? '<span class="poster-new-badge">🆕 ចេញថ្មី</span>' : '')}
+              ${d.total ? `<span class="poster-ep-badge">${esc(d.total)} ភាគ</span>` : ''}
+            </div>
+            <div class="poster-title" title="${esc(d.title)}">${esc(d.titleKhmer || d.title || `Series ${d.id}`)}</div>
+            <button type="button" class="${cs.btnClass}" data-card-dl="${esc(d.id)}" title="${cs.isRunning ? 'កំពុងទាញយក — ចុចមើល Video Management' : 'ទាញយករឿងនេះភ្លាម'}">${esc(cs.btnText)}</button>
+          </div>
+        `;
+      }
+
       function renderDramaGrid() {
         const list = state.mode === 'search' ? state.matches : state.dramas;
         if (!list.length) {
           $('dramaGrid').innerHTML = `<div style="grid-column:1/-1;padding:64px;text-align:center;color:var(--muted);">រកមិនឃើញរឿងទេ</div>`;
           return;
         }
-        $('dramaGrid').innerHTML = list.map((d) => {
-          const cs = getDramaCardState(d);
-          const showSrcTag = d.source && d.source !== 'hongguo' && state.source !== d.source;
-          return `
-            <div class="poster-card ${cs.isPicked ? 'is-picked' : ''}" role="button" tabindex="0" data-id="${esc(d.id)}" data-title="${esc(d.title)}" data-khmer="${esc(d.titleKhmer || '')}" data-cover="${esc(d.cover || '')}" data-total="${esc(d.total || 0)}">
-              <div class="poster-img-box">
-                <img src="${esc(d.cover || '')}" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.opacity='0.2'" alt="" />
-                <span class="poster-status-pill${cs.pillClass ? ' ' + cs.pillClass : ''}" data-role="pill" style="display:${cs.pillText ? 'inline-block' : 'none'}">${esc(cs.pillText)}</span>
-                ${showSrcTag ? `<span class="poster-src-tag">${esc(d.source)}</span>` : ''}
-                <button type="button" class="poster-pick-chk" data-card-pick="${esc(d.id)}" aria-pressed="${cs.isPicked ? 'true' : 'false'}" title="រើសរឿងនេះដើម្បីទាញព្រមគ្នាច្រើនរឿង">${cs.isPicked ? '✓' : '☐'}</button>
-                ${d.total ? `<span class="poster-ep-badge">${esc(d.total)} ភាគ</span>` : ''}
-              </div>
-              <div class="poster-title">${esc(d.titleKhmer || d.title || `Series ${d.id}`)}</div>
-              <button type="button" class="${cs.btnClass}" data-card-dl="${esc(d.id)}" title="${cs.isRunning ? 'កំពុងទាញយក — ចុចមើល Video Management' : 'ទាញយករឿងនេះភ្លាម'}">${esc(cs.btnText)}</button>
-            </div>
-          `;
-        }).join('');
+        $('dramaGrid').innerHTML = list.map(buildPosterCardHtml).join('');
+        queueCardsAutoTranslation();
+      }
+
+      function renderRelatedDramas(metaLabel = '') {
+        const cardEl = $('relatedDramasCard');
+        const gridEl = $('relatedDramaGrid');
+        if (!cardEl || !gridEl) return;
+        cardEl.style.display = 'block';
+        const list = Array.isArray(state.relatedDramas) ? state.relatedDramas : [];
+        $('relatedCountLabel').textContent = String(list.length);
+        const tagBadge = $('relatedTagBadge');
+        if (tagBadge) {
+          if (metaLabel) {
+            tagBadge.textContent = metaLabel;
+            tagBadge.style.display = 'inline-block';
+          } else {
+            tagBadge.style.display = 'none';
+          }
+        }
+        if (!list.length) {
+          gridEl.innerHTML = `<div style="grid-column:1/-1;padding:24px;text-align:center;color:var(--muted);">កំពុងស្វែងរករឿងប្រហាក់ប្រហែល...</div>`;
+          return;
+        }
+        gridEl.innerHTML = list.map(buildPosterCardHtml).join('');
+        queueCardsAutoTranslation(180);
+      }
+
+      let relatedReqSeq = 0;
+      let relatedLoadingMore = false;
+      async function loadRelatedDramas(nextPage = false, append = false) {
+        const d = state.currentDrama;
+        const cardEl = $('relatedDramasCard');
+        const gridEl = $('relatedDramaGrid');
+        const loaderEl = $('relatedScrollLoader');
+        if (!d || !cardEl || !gridEl) return;
+        if (append && relatedLoadingMore) return;
+
+        if (append || nextPage) state.relatedPage += 1;
+        else state.relatedPage = 1;
+
+        const seq = ++relatedReqSeq;
+        if (append) {
+          relatedLoadingMore = true;
+          if (loaderEl) loaderEl.style.display = 'block';
+        }
+        const btn = $('btnRefreshRelated');
+        if (btn && !append) {
+          btn.disabled = true;
+          btn.textContent = '⏳ កំពុងស្វែងរក...';
+        }
+        cardEl.style.display = 'block';
+        if (!append && !nextPage && (!state.relatedDramas || !state.relatedDramas.length)) {
+          gridEl.innerHTML = `<div style="grid-column:1/-1;padding:28px;text-align:center;color:var(--muted);"><div class="spinner" style="margin:0 auto 10px;"></div>កំពុងស្វែងរករឿងប្រហាក់ប្រហែល...</div>`;
+        }
+        try {
+          const seenSet = new Set(state.relatedDramas.map((x) => String(x.id)));
+          seenSet.add(String(d.seriesId));
+          let addedItems = [];
+          let lastRes = null;
+
+          for (let tries = 0; tries < 2; tries++) {
+            const excludeParam = Array.from(seenSet).slice(-90).join(',');
+            const url = `/api/related-dramas?seriesId=${encodeURIComponent(d.seriesId)}&title=${encodeURIComponent(d.title || '')}&source=${encodeURIComponent(d.source || 'hongguo')}&page=${state.relatedPage}&exclude=${encodeURIComponent(excludeParam)}`;
+            const res = await api(url);
+            if (seq !== relatedReqSeq || !state.currentDrama || String(state.currentDrama.seriesId) !== String(d.seriesId)) return;
+            lastRes = res;
+            const incoming = Array.isArray(res.dramas) ? res.dramas : [];
+            if (append) {
+              for (const item of incoming) {
+                const idStr = String(item.id);
+                if (!seenSet.has(idStr)) {
+                  seenSet.add(idStr);
+                  state.relatedDramas.push(item);
+                  addedItems.push(item);
+                }
+              }
+              if (addedItems.length >= 6) break;
+              state.relatedPage += 1;
+            } else {
+              if (incoming.length > 0) state.relatedDramas = incoming;
+              break;
+            }
+          }
+
+          if (append) {
+            if (addedItems.length > 0) {
+              gridEl.insertAdjacentHTML('beforeend', addedItems.map(buildPosterCardHtml).join(''));
+              $('relatedCountLabel').textContent = String(state.relatedDramas.length);
+              queueCardsAutoTranslation(150);
+            }
+          } else {
+            const catMatch = lastRes && HONGGUO_CATEGORIES.find((c) => c.id === lastRes.category);
+            const badgeText = catMatch ? catMatch.label : (lastRes && lastRes.keyword ? `🔍 ${lastRes.keyword}` : '');
+            renderRelatedDramas(badgeText);
+          }
+        } catch (_) {
+        } finally {
+          if (append) {
+            relatedLoadingMore = false;
+            if (loaderEl) loaderEl.style.display = 'none';
+          }
+          if (btn && seq === relatedReqSeq) {
+            btn.disabled = false;
+            btn.textContent = '🔄 ប្ដូររឿងណែនាំថ្មី';
+          }
+        }
       }
 
       async function quickDownloadDrama(d) {
@@ -2166,20 +2512,111 @@
           state.downloaded = new Set(data.downloaded || []);
           state.broken = new Set(data.broken || []);
           state.lockedEps = new Set(data.lockedEps || []);
+          const fallbackLocal = state.dramas.filter((x) => String(x.id) !== String(data.seriesId)).slice(0, 18);
           if (!same) {
             state.selected.clear();
+            state.relatedDramas = (Array.isArray(data.relatedDramas) && data.relatedDramas.length) ? data.relatedDramas : fallbackLocal;
             $('rangeFrom').value = 1;
             $('rangeTo').value = Math.min(20, Math.max(1, state.currentDrama.total));
+          } else if (!state.relatedDramas.length) {
+            state.relatedDramas = (Array.isArray(data.relatedDramas) && data.relatedDramas.length) ? data.relatedDramas : fallbackLocal;
           }
           renderHero();
           renderEpisodes();
           renderDramaProgressBox();
           syncButtons();
+          const catMatch = HONGGUO_CATEGORIES.find((c) => c.id === data.relatedCategory);
+          renderRelatedDramas(catMatch ? catMatch.label : '');
           if (switchScreen) setView('drama');
+          loadRelatedDramas(false, false);
+          if (state.lockedEps.size > 0) {
+            loadFullMovieMirrors(false);
+          } else if ($('fullMovieFinderCard')) {
+            $('fullMovieFinderCard').style.display = 'none';
+          }
         } catch (err) {
           toast(err.message, 'err');
         } finally {
           setOverlay(false);
+        }
+      }
+
+      let fullMovieReqSeq = 0;
+      async function loadFullMovieMirrors(scrollToCard = false) {
+        const d = state.currentDrama;
+        const card = $('fullMovieFinderCard');
+        const grid = $('fullMovieGrid');
+        const countLbl = $('fullMovieCountLabel');
+        if (!d || !card || !grid) return;
+
+        card.style.display = 'block';
+        if (scrollToCard) {
+          card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        refreshVipTokenStatus();
+
+        const seq = ++fullMovieReqSeq;
+        grid.innerHTML = `<div style="grid-column:1/-1; padding:14px; text-align:center; color:var(--muted); font-size:13px;">⏳ កំពុងស្វែងរកវីដេអូរឿងពេញ "${esc(d.title)}" លើ Dailymotion &amp; YouTube...</div>`;
+        try {
+          const res = await api(`/api/find-full-movie?title=${encodeURIComponent(d.title || '')}`);
+          if (seq !== fullMovieReqSeq) return;
+          const movies = Array.isArray(res.movies) ? res.movies : [];
+          if (countLbl) countLbl.textContent = String(movies.length);
+          if (!movies.length) {
+            grid.innerHTML = `<div style="grid-column:1/-1; padding:14px; text-align:center; color:var(--muted); font-size:13px;">មិនទាន់រកឃើញវីដេអូរឿងពេញសម្រាប់ឈ្មោះនេះទេ — សូមសាកល្បងដាក់ DramaBox VIP Token ឬប្ដូរទៅប្រភព 🔥 HongGuo / 🦛 Hema / 🍱 Xifan ដែលឥតគិតថ្លៃ ១០០%!</div>`;
+            return;
+          }
+          grid.innerHTML = movies.map((m) => `
+            <div style="display:flex; gap:10px; padding:10px; background:rgba(15,23,42,0.88); border:1px solid var(--border); border-radius:11px; align-items:center;">
+              <div style="position:relative; width:96px; height:64px; flex-shrink:0; border-radius:8px; overflow:hidden; background:#090d16;">
+                ${m.cover ? `<img src="${esc(m.cover)}" alt="" loading="lazy" referrerpolicy="no-referrer" style="width:100%; height:100%; object-fit:cover;" />` : ''}
+                ${m.durationText ? `<span style="position:absolute; bottom:4px; right:4px; background:rgba(0,0,0,0.82); color:#f8fafc; font-size:10.5px; font-weight:700; padding:1px 5px; border-radius:4px;">⏱️ ${esc(m.durationText)}</span>` : ''}
+              </div>
+              <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:5px;">
+                <div style="font-size:12.5px; font-weight:700; color:#f8fafc; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;" title="${esc(m.title)}">${esc(m.title)}</div>
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap;">
+                  <span style="font-size:11px; color:var(--muted);">${esc(m.platformIcon || '🎬')} ${esc(m.platform)} • ${esc(m.channel || '')}</span>
+                  <button type="button" class="btn btn-primary btn-xs" data-dl-full-url="${esc(m.url)}" data-dl-full-title="${esc(m.title)}" data-dl-full-cover="${esc(m.cover || '')}" data-dl-full-plat="${esc(m.platform || 'Social')}">⬇️ ទាញរឿងពេញ</button>
+                </div>
+              </div>
+            </div>
+          `).join('');
+        } catch (err) {
+          if (seq === fullMovieReqSeq) {
+            grid.innerHTML = `<div style="grid-column:1/-1; padding:14px; text-align:center; color:#fca5a5; font-size:13px;">❌ ${esc(err.message)}</div>`;
+          }
+        }
+      }
+
+      async function refreshVipTokenStatus() {
+        try {
+          const r = await api('/api/dramabox-token');
+          const badge = $('vipTokenStatusBadge');
+          if (badge) {
+            badge.textContent = r.hasCustomToken ? `(កំពុងប្រើ Token: ${r.maskedToken})` : '(កំពុងប្រើប្រព័ន្ធ Guest SAPI ស្វ័យប្រវត្តិ)';
+          }
+        } catch (_) {}
+      }
+
+      async function saveVipToken(tokenStr) {
+        try {
+          const r = await api('/api/dramabox-token', {
+            method: 'POST',
+            body: JSON.stringify({ token: tokenStr })
+          });
+          if (!r.success) { toast(r.error || 'មិនអាចរក្សាទុក Token បានទេ', 'err'); return; }
+          toast(r.message || '✅ បានរក្សាទុក Token', 'ok');
+          if ($('vipTokenInput')) $('vipTokenInput').value = '';
+          refreshVipTokenStatus();
+          if (state.currentDrama) {
+            await openDrama(state.currentDrama.seriesId, {
+              title: state.currentDrama.title,
+              titleKhmer: state.currentDrama.titleKhmer,
+              cover: state.currentDrama.cover
+            }, true, false);
+          }
+        } catch (err) {
+          toast(err.message, 'err');
         }
       }
 
@@ -2226,7 +2663,15 @@
         const d = state.currentDrama;
         if (!d) return;
         $('heroCover').src = d.cover || '';
-        $('heroTitle').textContent = d.titleKhmer ? `${d.titleKhmer} (${d.title})` : d.title;
+        if (d.titleKhmer && d.titleKhmer !== d.title) {
+          $('heroTitle').textContent = d.titleKhmer;
+          $('heroOriginalTitle').textContent = `(ឈ្មោះដើម៖ ${d.title})`;
+          $('heroOriginalTitle').style.display = 'block';
+        } else {
+          $('heroTitle').textContent = d.title;
+          $('heroOriginalTitle').textContent = '';
+          $('heroOriginalTitle').style.display = 'none';
+        }
         const done = countReadyEpisodes();
         const freeTotal = Math.max(done, d.total - state.lockedEps.size);
         const left = Math.max(0, freeTotal - done);
@@ -2254,6 +2699,9 @@
               ? '✅ ទាញយកគ្រប់ភាគឥតគិតថ្លៃរួចរាល់'
               : (missing.length === freeTotal ? `⬇️ ទាញយកទាំងអស់ (${missing.length} ភាគ)` : `⬇️ ទាញយកភាគនៅសល់ (${missing.length} ភាគ)`));
 
+        if ($('btnFindFullMovie')) {
+          $('btnFindFullMovie').style.display = (d && (state.lockedEps.size > 0 || d.source === 'dramabox' || d.source === 'reelshort')) ? 'inline-flex' : 'none';
+        }
         $('btnRetryFailed').style.display = (!active && failed.length > 0 && missing.length < (d ? d.total : 0)) ? 'inline-flex' : 'none';
         $('btnRetryFailed').textContent = `🔄 ទាញភាគបរាជ័យឡើងវិញ (${failed.length})`;
         $('btnStop').style.display = active ? 'inline-flex' : 'none';
@@ -2323,7 +2771,8 @@
             const ep = Number(btn.dataset.ep);
             if (btn.dataset.st === 'done') { openVideo(ep); return; }
             if (btn.dataset.st === 'locked') {
-              toast(`🔒 ភាគ ${ep} ជាប់សោ VIP លើវេទិកាដើម — ទាញបានតែភាគឥតគិតថ្លៃ`, 'warn');
+              toast(`🔒 ភាគ ${ep} ជាប់សោ VIP — កំពុងបង្ហាញវីដេអូរឿងពេញឥតគិតថ្លៃ (Full Movie) ខាងលើ!`, 'warn');
+              loadFullMovieMirrors(true);
               return;
             }
             if (state.selected.has(ep)) state.selected.delete(ep);
@@ -2377,7 +2826,7 @@
       function buildManageJobViewModel(j) {
         const st = jobStatusMeta(j);
         const pct = Math.max(0, Math.min(100, Number(j.progress || 0)));
-        const isMerge = j.mode === 'merge' || j.speedText === 'FFmpeg Merge';
+        const isMerge = j.mode === 'merge' || j.status === 'merging' || j.speedText === 'FFmpeg Merge' || j.speedText === 'FFmpeg Compress';
         const titleShow = j.titleKhmer ? `${j.titleKhmer}` : (j.title || j.folder || `Series ${j.seriesId}`);
         const subShow = j.titleKhmer && j.title ? j.title : '';
         const logsOpen = state.expandedLogs.has(String(j.jobId));
@@ -2614,6 +3063,7 @@
 
       // ================= DOWNLOAD & SSE =================
       let sseRetryTimer = null;
+      let knownServerBootId = null;
       function connectSSE() {
         if (sseRetryTimer) { clearTimeout(sseRetryTimer); sseRetryTimer = null; }
         if (state.sse) try { state.sse.close(); } catch {}
@@ -2623,6 +3073,13 @@
           try {
             const p = JSON.parse(ev.data);
             if (!p) return;
+            if (p.bootId) {
+              if (knownServerBootId && knownServerBootId !== p.bootId) {
+                window.location.reload();
+                return;
+              }
+              knownServerBootId = p.bootId;
+            }
             if (Array.isArray(p.jobs)) {
               applyJobsPayload(p.jobs, p.summary);
             } else if (p.snapshot && p.snapshot.status && p.snapshot.status !== 'idle') {
@@ -2681,7 +3138,7 @@
           const prev = prevById.get(job.jobId);
           if (prev && prev.active && !job.active) {
             shouldRefreshLib = true;
-            const isMerge = job.mode === 'merge' || job.speedText === 'FFmpeg Merge';
+            const isMerge = job.mode === 'merge' || job.status === 'merging' || job.speedText === 'FFmpeg Merge' || job.speedText === 'FFmpeg Compress';
             const label = job.titleKhmer || job.title || '';
             if (job.status === 'done') toast(`${isMerge ? '🎬 ផ្គុំរឿងពេញរួចរាល់' : '🎉 ទាញយករួចរាល់'}: ${label}`, 'ok');
             else if (job.status === 'partial') toast(`⚠️ ${label}: មាន ${job.failed} ភាគបរាជ័យ`, 'warn');
@@ -2841,12 +3298,16 @@
           ? selected.map((e) => `EP${e}`).join(' → ')
           : `${selected.slice(0, 4).map((e) => `EP${e}`).join(' → ')} → ... → ${selected.slice(-2).map((e) => `EP${e}`).join(' → ')}`;
 
+        const isCompress = Boolean($('chkCompressMerge')?.checked);
         previewEl.innerHTML = `
           <div>លំដាប់ផ្គុំ៖ <strong>${esc(chainPreview)}</strong> (${selected.length} ភាគ)</div>
           <div>ឯកសារលទ្ធផល៖ <strong>Full Movie/${esc(outName)}</strong></div>
+          <div>ម៉ូដផ្គុំ៖ <strong>${isCompress ? '🗜️ បង្ហាប់ទំហំឱ្យស្រាល (Telegram & Web Ready)' : '⚡ ផ្គុំលឿនរក្សាគុណភាពដើម (Direct Copy)'}</strong></div>
         `;
         confirmBtn.disabled = false;
-        confirmBtn.textContent = `🎞️ ចាប់ផ្តើមផ្គុំតាមលំដាប់ (${selected.length} ភាគ)`;
+        confirmBtn.textContent = isCompress
+          ? `🗜️ ចាប់ផ្តើមបង្ហាប់ & ផ្គុំ (${selected.length} ភាគ)`
+          : `🎞️ ចាប់ផ្តើមផ្គុំតាមលំដាប់ (${selected.length} ភាគ)`;
       }
 
       async function confirmAndStartMerge() {
@@ -2855,6 +3316,7 @@
         const selected = ctx.availableEps.filter((ep) => ctx.selectedSet.has(ep));
         if (selected.length < 2) return;
         const isAll = selected.length === ctx.availableEps.length;
+        const compress = Boolean($('chkCompressMerge')?.checked);
         $('mergeModal').classList.remove('show');
         await ensureSSE();
         const r = await api('/api/merge-drama', {
@@ -2862,7 +3324,8 @@
           body: JSON.stringify({
             folder: ctx.folder || undefined,
             seriesId: ctx.seriesId || undefined,
-            selectedEps: isAll ? undefined : selected
+            selectedEps: isAll ? undefined : selected,
+            compress
           })
         });
         if (!r.success) {
@@ -2871,7 +3334,7 @@
         }
         if (r.jobs) applyJobsPayload(r.jobs, r.summary);
         startPolling();
-        toast(`🎞️ កំពុងផ្គុំ ${r.count} ភាគតាមលំដាប់ (EP${r.firstEp} → EP${r.lastEp})...`, 'ok');
+        toast(`${compress ? '🗜️ កំពុងបង្ហាប់ & ផ្គុំ' : '🎞️ កំពុងផ្គុំ'} ${r.count} ភាគតាមលំដាប់ (EP${r.firstEp} → EP${r.lastEp})...`, 'ok');
       }
 
       // ================= VIDEO PLAYER =================
@@ -3212,6 +3675,7 @@
       async function loadConfig() {
         try {
           $('chkAutoMerge').checked = getPref('eza_autoMerge', 'hdrg_autoMerge') === '1';
+          if ($('chkCompressMerge')) $('chkCompressMerge').checked = getPref('eza_compressMerge') === '1';
           syncMultiSelectUi();
           const savedQual = getPref('eza_quality', 'hdrg_quality');
           if (savedQual === 'fast' || savedQual === '1080p') $('qualitySelect').value = savedQual;
@@ -3408,8 +3872,8 @@
         $('socialPlaylistSummary').textContent = `បានរើស ${state.socialSelectedIndices.size}/${total} វីដេអូ`;
       });
 
-      // Delegated clicks & keyboard activation on Browse Poster Grid
-      $('dramaGrid').addEventListener('click', (e) => {
+      // Delegated clicks & keyboard activation on Browse & Related Poster Grids
+      function handlePosterGridClick(e) {
         const pickBtn = e.target.closest('[data-card-pick]');
         if (pickBtn) {
           e.stopPropagation();
@@ -3426,20 +3890,115 @@
         }
         const card = e.target.closest('.poster-card');
         if (!card) return;
-        if (state.multiSelect) {
+        if (state.view === 'browse' && state.multiSelect) {
           toggleDramaPick(getDramaPayloadFromCard(card));
         } else {
           openDrama(card.dataset.id, { title: card.dataset.title, titleKhmer: card.dataset.khmer, cover: card.dataset.cover });
         }
-      });
+      }
 
-      $('dramaGrid').addEventListener('keydown', (e) => {
+      function handlePosterGridKeydown(e) {
         if (e.key !== 'Enter' && e.key !== ' ') return;
         const card = e.target.closest('.poster-card');
         if (!card || e.target !== card) return;
         e.preventDefault();
         card.click();
-      });
+      }
+
+      $('dramaGrid').addEventListener('click', handlePosterGridClick);
+      $('dramaGrid').addEventListener('keydown', handlePosterGridKeydown);
+      if ($('relatedDramaGrid')) {
+        $('relatedDramaGrid').addEventListener('click', handlePosterGridClick);
+        $('relatedDramaGrid').addEventListener('keydown', handlePosterGridKeydown);
+      }
+      if ($('btnRefreshRelated')) {
+        $('btnRefreshRelated').addEventListener('click', () => safeRun(() => loadRelatedDramas(true, false)));
+      }
+      if ($('btnFindFullMovie')) {
+        $('btnFindFullMovie').addEventListener('click', () => safeRun(() => loadFullMovieMirrors(true)));
+      }
+      if ($('btnDownloadCoverHd')) {
+        $('btnDownloadCoverHd').addEventListener('click', () => {
+          const d = state.currentDrama;
+          if (!d || !d.cover) {
+            toast('រឿងនេះមិនមានរូបក្របទេ', 'warn');
+            return;
+          }
+          const url = `/api/cover-hd?seriesId=${encodeURIComponent(d.seriesId || '')}&cover=${encodeURIComponent(d.cover || '')}&title=${encodeURIComponent(d.titleKhmer || d.title || 'Drama')}`;
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${d.titleKhmer || d.title || 'Drama'} - Cover HD.jpg`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          toast('🖼️ កំពុងទាញយករូបក្របគុណភាពច្បាស់កំពូល (Ultra-HD Cover.jpg)...', 'ok');
+        });
+      }
+      if ($('btnRefreshFullMovie')) {
+        $('btnRefreshFullMovie').addEventListener('click', () => safeRun(() => loadFullMovieMirrors(false)));
+      }
+      if ($('btnToggleVipTokenBar')) {
+        $('btnToggleVipTokenBar').addEventListener('click', () => {
+          const bar = $('vipTokenBar');
+          if (!bar) return;
+          bar.style.display = bar.style.display === 'none' ? 'block' : 'none';
+          if (bar.style.display === 'block') refreshVipTokenStatus();
+        });
+      }
+      if ($('btnSaveVipToken')) {
+        $('btnSaveVipToken').addEventListener('click', () => {
+          const val = ($('vipTokenInput') ? $('vipTokenInput').value : '').trim();
+          if (!val) { toast('សូមបញ្ចូល DramaBox Bearer Token ជាមុនសិន!', 'warn'); return; }
+          safeRun(() => saveVipToken(val));
+        });
+      }
+      if ($('btnClearVipToken')) {
+        $('btnClearVipToken').addEventListener('click', () => safeRun(() => saveVipToken('')));
+      }
+      if ($('fullMovieGrid')) {
+        $('fullMovieGrid').addEventListener('click', (e) => {
+          const btn = e.target.closest('[data-dl-full-url]');
+          if (!btn) return;
+          safeRun(async () => {
+            const targetUrl = btn.dataset.dlFullUrl;
+            const title = btn.dataset.dlFullTitle || (state.currentDrama ? state.currentDrama.title : 'Full Movie');
+            const cover = btn.dataset.dlFullCover || (state.currentDrama ? state.currentDrama.cover : '');
+            const plat = btn.dataset.dlFullPlat || 'Social';
+            btn.disabled = true;
+            btn.textContent = '⏳ កំពុងចាប់ផ្ដើម...';
+            try {
+              await ensureSSE();
+              const res = await api('/api/ytdlp-download', {
+                method: 'POST',
+                body: JSON.stringify({
+                  url: targetUrl,
+                  title,
+                  cover,
+                  platform: { name: plat },
+                  qualityPreset: 'best',
+                  useAria2: true,
+                  isPlaylist: false,
+                  totalItems: 1
+                })
+              });
+              if (!res.success) {
+                toast(res.error || 'មិនអាចចាប់ផ្ដើមទាញយករឿងពេញបានទេ', 'err');
+                btn.disabled = false;
+                btn.textContent = '⬇️ ទាញរឿងពេញ';
+                return;
+              }
+              if (res.jobs) applyJobsPayload(res.jobs, res.summary);
+              startPolling();
+              btn.textContent = '✅ កំពុងទាញយក...';
+              toast(`🚀 កំពុងទាញរឿងពេញ "${title}" ពី ${plat}!`, 'ok');
+            } catch (err) {
+              toast(err.message, 'err');
+              btn.disabled = false;
+              btn.textContent = '⬇️ ទាញរឿងពេញ';
+            }
+          });
+        });
+      }
 
       $('btnMultiSelectMode').addEventListener('click', () => {
         state.multiSelect = !state.multiSelect;
@@ -3573,12 +4132,129 @@
       }));
 
       $('btnOpenFolderTop').addEventListener('click', () => safeRun(() => api('/api/open-folder', { method: 'POST', body: '{}' })));
-      $('btnOpenDramaFolder').addEventListener('click', () => safeRun(() => api('/api/open-folder', { method: 'POST', body: JSON.stringify({ title: state.currentDrama ? state.currentDrama.title : '' }) })));
+      $('btnOpenDramaFolder').addEventListener('click', () => safeRun(() => api('/api/open-folder', { method: 'POST', body: JSON.stringify({ title: state.currentDrama ? state.currentDrama.title : '', seriesId: state.currentDrama ? state.currentDrama.seriesId : '' }) })));
       $('btnPickFolderInline').addEventListener('click', pickSaveFolder);
+
+      $('btnDownloadCover').addEventListener('click', () => {
+        const d = state.currentDrama;
+        if (!d || !d.cover) {
+          toast('មិនមានរូបភាព Cover ទេ', 'warn');
+          return;
+        }
+        toast('🖼️ កំពុងទាញយករូប Cover...', 'ok');
+        const title = d.titleKhmer || d.title || 'drama';
+        const dlUrl = `/api/download-cover?url=${encodeURIComponent(d.cover)}&title=${encodeURIComponent(title)}&folder=${encodeURIComponent(d.title || '')}&seriesId=${encodeURIComponent(d.seriesId || '')}`;
+        const a = document.createElement('a');
+        a.href = dlUrl;
+        a.download = `${title}_cover.jpg`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      });
+
+      $('btnAITranslate').addEventListener('click', () => safeRun(async () => {
+        const d = state.currentDrama;
+        if (!d || !d.title) return;
+        const btn = $('btnAITranslate');
+        btn.disabled = true;
+        btn.textContent = '✨ កំពុងបកប្រែ...';
+        try {
+          translateFailCounts.delete(d.title);
+          const res = await api('/api/translate-title', {
+            method: 'POST',
+            body: JSON.stringify({
+              title: d.title,
+              seriesId: d.seriesId,
+              forceAI: true
+            })
+          });
+          if (res && res.success && res.khmer && res.khmer !== d.title) {
+            syncClientDramaKhmerTitle(d.seriesId, d.title, res.khmer);
+            renderHero();
+            toast(`✨ បានបកប្រែជា៖ "${res.khmer}"`, 'ok');
+          } else {
+            toast(res?.error || 'មិនអាចបកប្រែបានទេ (សូមពិនិត្យ Gemini API Key)', 'warn');
+          }
+        } catch (err) {
+          toast(err.message || 'បញ្ហាតភ្ជាប់', 'err');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = '✨ AI បកប្រែ';
+        }
+      }));
+
+      $('btnEditTitle').addEventListener('click', () => safeRun(async () => {
+        const d = state.currentDrama;
+        if (!d || !d.title) return;
+        const current = d.titleKhmer || d.title;
+        const val = prompt('កែសម្រួលចំណងជើងរឿងជាភាសាខ្មែរ (Khmer Title)៖', current);
+        if (val !== null && val.trim() && val.trim() !== d.titleKhmer) {
+          const clean = val.trim();
+          translateFailCounts.delete(d.title);
+          syncClientDramaKhmerTitle(d.seriesId, d.title, clean);
+          renderHero();
+          await api('/api/update-title', {
+            method: 'POST',
+            body: JSON.stringify({
+              title: d.title,
+              titleKhmer: clean,
+              seriesId: d.seriesId
+            })
+          });
+          toast('បានរក្សាទុកចំណងជើងថ្មី ✓', 'ok');
+        }
+      }));
 
       $('btnDownloadAll').addEventListener('click', () => safeRun(() => startDownload(missingList())));
       $('btnRetryFailed').addEventListener('click', () => safeRun(() => startDownload(failedList())));
       $('btnRetryStrip').addEventListener('click', () => safeRun(() => startDownload(failedList())));
+      if ($('btnRepairAndRetry')) {
+        $('btnRepairAndRetry').addEventListener('click', () => safeRun(async () => {
+          const btn = $('btnRepairAndRetry');
+          btn.disabled = true;
+          btn.textContent = '⏳ កំពុងជួសជុល...';
+          try {
+            const r = await api('/api/repair-engine', { method: 'POST', body: '{}' });
+            if (r && r.message) toast(r.message, 'ok');
+          } finally {
+            btn.disabled = false;
+            btn.textContent = '🔧 ជួសជុល & ទាញម្ដងទៀត';
+          }
+          await startDownload(failedList());
+        }));
+      }
+      if ($('btnRepairEngine')) {
+        $('btnRepairEngine').addEventListener('click', () => safeRun(async () => {
+          const btn = $('btnRepairEngine');
+          const stEl = $('repairEngineStatus');
+          btn.disabled = true;
+          if (stEl) stEl.textContent = '⏳ កំពុងចុះឈ្មោះឧបករណ៍ថ្មី និងពិនិត្យប្រព័ន្ធ...';
+          try {
+            const r = await api('/api/repair-engine', { method: 'POST', body: '{}' });
+            const msg = (r && r.message) || '✅ ជួសជុលប្រព័ន្ធរួចរាល់!';
+            if (stEl) stEl.textContent = msg;
+            toast(msg, r && r.success ? 'ok' : 'warn');
+          } finally {
+            btn.disabled = false;
+          }
+        }));
+      }
+      if ($('btnUpdateYtdlp')) {
+        $('btnUpdateYtdlp').addEventListener('click', () => safeRun(async () => {
+          const btn = $('btnUpdateYtdlp');
+          const stEl = $('repairEngineStatus');
+          btn.disabled = true;
+          if (stEl) stEl.textContent = '⏳ កំពុងពិនិត្យ និងអាប់ដេត yt-dlp.exe...';
+          try {
+            const r = await api('/api/repair-engine', { method: 'POST', body: JSON.stringify({ updateYtdlp: true }) });
+            const msg = (r && r.message) || '✅ អាប់ដេតរួចរាល់!';
+            if (stEl) stEl.textContent = msg;
+            toast(msg, r && r.success ? 'ok' : 'warn');
+          } finally {
+            btn.disabled = false;
+          }
+        }));
+      }
       $('btnStop').addEventListener('click', () => safeRun(async () => {
         if (!state.currentDrama) return;
         const r = await api('/api/stop-download', { method: 'POST', body: JSON.stringify({ seriesId: state.currentDrama.seriesId }) });
@@ -3632,6 +4308,12 @@
       });
 
       $('btnConfirmMerge').addEventListener('click', () => safeRun(confirmAndStartMerge));
+      if ($('chkCompressMerge')) {
+        $('chkCompressMerge').addEventListener('change', () => {
+          setPref('eza_compressMerge', $('chkCompressMerge').checked ? '1' : '0');
+          updateMergeModalView();
+        });
+      }
       $('btnPlayFull').addEventListener('click', openFullVideo);
       $('chkAutoMerge').addEventListener('change', () => {
         $('chkMultiAutoMerge').checked = $('chkAutoMerge').checked;
@@ -3740,6 +4422,18 @@
         closeVideo();
         if (ep && sid) startDownload([ep], { seriesId: sid, title: state.playerCtx.title });
       });
+
+      window.addEventListener('scroll', () => {
+        if (state.view === 'browse' || state.view === 'drama') queueCardsAutoTranslation();
+        const nearBottom = (window.innerHeight + window.scrollY) >= (document.body.offsetHeight - 600);
+        if (!nearBottom) return;
+        if (state.view === 'drama' && !relatedLoadingMore) {
+          loadRelatedDramas(true, true);
+        } else if (state.view === 'browse' && state.mode === 'catalog' && state.source !== 'social' && !$('btnLoadMore').disabled) {
+          state.page += 1;
+          loadCatalog(true);
+        }
+      }, { passive: true });
 
       boot();
     })();

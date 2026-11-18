@@ -11,6 +11,7 @@ const cloudLicense = require('./lib/cloud-license');
 const { fetchEpisodeList } = require('./hongguo-drama/src/native/hongguo');
 const { searchHongguo } = require('./hongguo-drama/src/native/hongguo-search');
 const { readRouterData, browseList } = require('./hongguo-drama/src/native/catalog');
+const { listNewReleases } = require('./hongguo-drama/src/native/hongguo-app-new');
 
 const { fetchAppPlayUrl, requestJson: appRequestJson } = require('./hongguo-drama/src/native/app-source');
 const { getPlaybackDevice } = require('./hongguo-drama/src/native/playback-device');
@@ -178,6 +179,9 @@ async function promptFolderPicker(initialPath = DEFAULT_DOWNLOAD_DIR) {
 // ===== Drama Catalog & Khmer Quick Dictionary =====
 const CATEGORIES = [
   { id: 'trending', name: '🔥 កំពុងល្បី', badge: 'HOT 100', icon: '🔥' },
+  { id: 'new', name: '🆕 ចេញថ្មីៗ', badge: 'NEW', icon: '🆕' },
+  { id: 'anime', name: '🎨 តុក្កតា / 漫剧', badge: 'ANIME', icon: '🎨' },
+  { id: 'ai_anime', name: '🤖 តុក្កតា 3D / AI', badge: '3D ANIME', icon: '🤖' },
   { id: 'sad', name: '😭 កម្សត់ & ទុក្ខសោក', badge: 'MELODRAMA', icon: '😭' },
   { id: 'sweet', name: '💖 Sweet & ផ្អែម', badge: 'SWEET', icon: '💖' },
   { id: 'romance', name: '🌹 ស្នេហារ៉ូមែនទិក', badge: 'ROMANCE', icon: '🌹' },
@@ -240,29 +244,163 @@ const KHMER_DICT = [
   ['首富', 'មហាសេដ្ឋីលេខ១'],
   ['无敌', 'ឥតផ្ទឹម'],
   ['开局', 'ចាប់ផ្ដើមរឿង'],
+  ['漫剧', 'តុក្កតា'],
+  ['动漫', 'រឿងតុក្កតា'],
+  ['修仙', 'ហាត់យុទ្ធសិល្ប៍ទេព'],
 ];
+
+// ===== Translations Cache =====
+const SEED_TRANSLATIONS_CACHE_FILE = path.join(__dirname, 'translations_cache.json');
+const TRANSLATIONS_CACHE_FILE = process.env.EZA_USER_DATA_DIR
+  ? path.join(process.env.EZA_USER_DATA_DIR, 'translations_cache.json')
+  : SEED_TRANSLATIONS_CACHE_FILE;
+const translationsCache = new Map();
+
+function hasCorruptTranslationScript(text) {
+  return /[\u0E00-\u0EFF\u0370-\u03FF\u0400-\u04FF\u0600-\u06FF\u4E00-\u9FFF\uFFFD]/.test(String(text || ''));
+}
+
+function isCleanKhmerTranslation(orig, text) {
+  const clean = String(text || '').replace(/^["'«“\s]+|["'»”\s]+$/g, '').trim();
+  if (!clean || hasCorruptTranslationScript(clean)) return false;
+  const khmerChars = (clean.match(/[\u1780-\u17FF]/g) || []).length;
+  if (khmerChars < 4) return false;
+  if (String(orig || '').trim().length >= 5 && clean.length < 8) return false;
+  return true;
+}
+
+function mergeCacheFileIntoMap(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return;
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    if (data && typeof data === 'object') {
+      for (const [k, v] of Object.entries(data)) {
+        const orig = String(k || '').trim();
+        const val = String(v || '').trim();
+        if (orig && val.length >= 2 && !hasCorruptTranslationScript(val)) {
+          translationsCache.set(orig, val);
+        }
+      }
+    }
+  } catch (_) {}
+}
+
+function loadTranslationsCache() {
+  mergeCacheFileIntoMap(SEED_TRANSLATIONS_CACHE_FILE);
+  if (TRANSLATIONS_CACHE_FILE !== SEED_TRANSLATIONS_CACHE_FILE) {
+    mergeCacheFileIntoMap(TRANSLATIONS_CACHE_FILE);
+  }
+}
+
+function saveTranslationsCache() {
+  try {
+    fs.mkdirSync(path.dirname(TRANSLATIONS_CACHE_FILE), { recursive: true });
+    const obj = {};
+    for (const [k, v] of translationsCache.entries()) obj[k] = v;
+    fs.writeFileSync(TRANSLATIONS_CACHE_FILE, JSON.stringify(obj, null, 2), 'utf8');
+  } catch (_) {}
+}
+
+loadTranslationsCache();
 
 function getKhmerTitle(title) {
   if (!title) return '';
-  let kh = title;
-  for (const [cn, km] of KHMER_DICT) {
-    if (kh.includes(cn)) kh = kh.split(cn).join(km + ' ');
+  const clean = String(title).trim();
+  if (translationsCache.has(clean)) {
+    return translationsCache.get(clean);
   }
-  return kh === title ? '' : kh.trim();
+  for (const [cn, km] of KHMER_DICT) {
+    if (clean === cn) return km;
+  }
+  return '';
+}
+
+function applyCachedKhmerTitles(list) {
+  if (!Array.isArray(list)) return list;
+  for (const d of list) {
+    if (!d || !d.title) continue;
+    const kh = getKhmerTitle(d.title);
+    if (kh) d.titleKhmer = kh;
+  }
+  return list;
+}
+
+function syncDramaTitleEverywhere(origTitle, newKhmer, seriesId = '', folder = '') {
+  const clean = String(origTitle || '').trim();
+  const val = String(newKhmer || '').trim();
+  if (!clean || !val) return;
+  translationsCache.set(clean, val);
+  saveTranslationsCache();
+
+  const sid = String(seriesId || '').trim();
+  if (sid && dramaCache.has(sid)) {
+    const item = dramaCache.get(sid);
+    if (item?.data) item.data.titleKhmer = val;
+  }
+  for (const d of cachedTrendingDramas) {
+    if (d && (d.title === clean || (sid && String(d.id) === sid))) d.titleKhmer = val;
+  }
+  for (const entry of categoryCache.values()) {
+    for (const d of (entry.dramas || [])) {
+      if (d && (d.title === clean || (sid && String(d.id) === sid))) d.titleKhmer = val;
+    }
+  }
+
+  const targetFolder = folder ? dl.sanitizeTitle(folder, sid) : dl.sanitizeTitle(clean, sid);
+  if (targetFolder) {
+    const outDir = dl.resolveSafeSubdir(getDownloadDir(), targetFolder);
+    if (outDir && fs.existsSync(outDir)) {
+      dl.saveDramaMeta(outDir, { seriesId: sid, title: clean, titleKhmer: val });
+    }
+  }
 }
 
 let cachedTrendingDramas = [];
 let nextRefreshTimestamp = Date.now() + 10 * 60 * 1000;
 const categoryCache = new Map();
+const latestReleaseMetaById = new Map();
+
+function mapNewReleaseItem(item, idx = 0, category = 'new') {
+  const id = String(item.series_id || '');
+  const releasedToday = Boolean(item.released_today);
+  latestReleaseMetaById.set(id, { isNewRelease: true, releasedToday });
+  return {
+    id,
+    title: String(item.series_title || 'Drama'),
+    titleKhmer: getKhmerTitle(item.series_title),
+    cover: item.cover || '',
+    heat: releasedToday ? '🆕 ថ្ងៃនេះ' : '🆕 ចេញថ្មី',
+    total: Number(item.episode_count) || 80,
+    rank: idx + 1,
+    tags: Array.isArray(item.tags) && item.tags.length ? item.tags.slice(0, 3) : ['ចេញថ្មី'],
+    isNewRelease: true,
+    releasedToday,
+    category,
+  };
+}
+
+function attachReleaseFlags(drama) {
+  if (!drama || !drama.id) return drama;
+  const rel = latestReleaseMetaById.get(String(drama.id));
+  if (rel) {
+    drama.isNewRelease = true;
+    if (rel.releasedToday) drama.releasedToday = true;
+  }
+  return drama;
+}
 
 async function refreshTrendingDramas() {
   const categories = ['hot-drama', 'hot-real-drama', 'hot-comic-drama'];
   const allDramas = [];
   const seen = new Set();
 
+  // Fetch freshly released dramas (online_time descending) in parallel so newest releases appear first on top
+  const newRelPromise = listNewReleases({ pages: 1, useCache: false }).catch(() => ({ items: [] }));
+
+  const rankDramas = [];
   for (const cat of categories) {
     for (let page = 1; page <= 4; page++) {
-      if (allDramas.length >= 100) break;
+      if (rankDramas.length >= 100) break;
       const url = `https://hongguoduanju.com/rank/${cat}${page > 1 ? '?page=' + page : ''}`;
       try {
         const res = await axios.get(url, {
@@ -274,20 +412,9 @@ async function refreshTrendingDramas() {
         const parsed = typeof content === 'string' ? JSON.parse(content) : content;
         if (parsed?.rankList) {
           for (const item of parsed.rankList) {
-            if (item.seriesId && !seen.has(item.seriesId)) {
-              seen.add(item.seriesId);
-              const totalEps = Number(item.episodeCount || item.episode_count) || 80;
-              allDramas.push({
-                id: String(item.seriesId),
-                title: String(item.title || 'Drama'),
-                titleKhmer: getKhmerTitle(item.title),
-                cover: item.cover || '',
-                heat: item.heatText || '',
-                total: totalEps,
-                rank: allDramas.length + 1,
-                tags: Array.isArray(item.tags) ? item.tags.slice(0, 3) : ['热门', '短剧'],
-              });
-              if (allDramas.length >= 100) break;
+            if (item.seriesId) {
+              rankDramas.push(item);
+              if (rankDramas.length >= 100) break;
             }
           }
         }
@@ -295,10 +422,62 @@ async function refreshTrendingDramas() {
     }
   }
 
+  const newRelRes = await newRelPromise;
+  const newItems = Array.isArray(newRelRes?.items) ? newRelRes.items : [];
+  for (const item of newItems) {
+    if (item?.series_id) {
+      latestReleaseMetaById.set(String(item.series_id), {
+        isNewRelease: true,
+        releasedToday: Boolean(item.released_today),
+      });
+    }
+  }
+
+  // Place top fresh releases (prioritizing released_today) at the top of the home feed
+  const orderedNew = [
+    ...newItems.filter(x => x.released_today),
+    ...newItems.filter(x => !x.released_today),
+  ].slice(0, 18);
+
+  for (const item of orderedNew) {
+    const id = String(item?.series_id || '');
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    allDramas.push(mapNewReleaseItem(item, allDramas.length, 'trending'));
+  }
+
+  for (const item of rankDramas) {
+    const id = String(item.seriesId || '');
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const totalEps = Number(item.episodeCount || item.episode_count) || 80;
+    allDramas.push(attachReleaseFlags({
+      id,
+      title: String(item.title || 'Drama'),
+      titleKhmer: getKhmerTitle(item.title),
+      cover: item.cover || '',
+      heat: item.heatText || '',
+      total: totalEps,
+      rank: allDramas.length + 1,
+      tags: Array.isArray(item.tags) ? item.tags.slice(0, 3) : ['热门', '短剧'],
+    }));
+    if (allDramas.length >= 110) break;
+  }
+
   if (allDramas.length > 0) {
     cachedTrendingDramas = allDramas;
     nextRefreshTimestamp = Date.now() + 10 * 60 * 1000;
-    console.log(`[Trending] ទទួលបានរឿងភាគល្បីៗចំនួន ${cachedTrendingDramas.length} រឿង!`);
+    console.log(`[Trending] ទទួលបានរឿងភាគចំនួន ${cachedTrendingDramas.length} រឿង (ថ្មីៗលើគេ: ${orderedNew.length})!`);
+    if (loadConfig().GEMINI_API_KEY) {
+      const untranslated = allDramas.slice(0, 30).map(d => d.title).filter(t => !translationsCache.has(t));
+      if (untranslated.length > 0) {
+        batchTranslateTitlesSmart(untranslated).then((trans) => {
+          for (const d of cachedTrendingDramas) {
+            if (trans[d.title]) d.titleKhmer = trans[d.title];
+          }
+        }).catch(() => {});
+      }
+    }
   }
 }
 
@@ -306,12 +485,40 @@ async function fetchCategoryDramas(category, page = 1, force = false) {
   const pg = Math.max(1, parseInt(page, 10) || 1);
   const cacheKey = `${category}_p${pg}`;
 
+  if (category === 'new') {
+    if (!force && categoryCache.has(cacheKey)) {
+      const cached = categoryCache.get(cacheKey);
+      if (Date.now() - cached.timestamp < 5 * 60 * 1000 && cached.dramas.length > 0) {
+        return applyCachedKhmerTitles(cached.dramas);
+      }
+    }
+    try {
+      const pageSize = 24;
+      const neededPages = Math.min(8, Math.max(2, Math.ceil((pg * pageSize) / 50) + 1));
+      const newRes = await listNewReleases({ pages: neededPages, useCache: !force });
+      const items = Array.isArray(newRes?.items) ? newRes.items : [];
+      const sortedNew = [
+        ...items.filter(x => x.released_today),
+        ...items.filter(x => !x.released_today),
+      ];
+      const slice = sortedNew.slice((pg - 1) * pageSize, pg * pageSize);
+      const mapped = slice.map((item, idx) => mapNewReleaseItem(item, (pg - 1) * pageSize + idx, 'new'));
+      if (mapped.length > 0) {
+        categoryCache.set(cacheKey, { timestamp: Date.now(), dramas: mapped });
+      }
+      return applyCachedKhmerTitles(mapped);
+    } catch (err) {
+      console.error(`[Category new p${pg}] Error:`, err.message);
+      return [];
+    }
+  }
+
   if (category === 'trending') {
     if (pg === 1) {
       if (force || cachedTrendingDramas.length === 0) await refreshTrendingDramas();
-      return cachedTrendingDramas;
+      return applyCachedKhmerTitles(cachedTrendingDramas);
     }
-    if (!force && categoryCache.has(cacheKey)) return categoryCache.get(cacheKey).dramas;
+    if (!force && categoryCache.has(cacheKey)) return applyCachedKhmerTitles(categoryCache.get(cacheKey).dramas);
     const extraList = [];
     const seen = new Set();
     const genres = ['urban', 'romance', 'comeback', 'costume'];
@@ -322,7 +529,7 @@ async function fetchCategoryDramas(category, page = 1, force = false) {
       (b.results || []).forEach(item => {
         if (item && item.series_id && !seen.has(item.series_id)) {
           seen.add(item.series_id);
-          extraList.push({
+          extraList.push(attachReleaseFlags({
             id: String(item.series_id),
             title: item.series_title,
             titleKhmer: getKhmerTitle(item.series_title),
@@ -332,7 +539,7 @@ async function fetchCategoryDramas(category, page = 1, force = false) {
             tags: Array.isArray(item.tags) ? item.tags.slice(0, 3) : ['កំពុងល្បី', 'ពេញនិយម'],
             category: 'trending',
             rank: 100 + (pg - 2) * 24 + extraList.length,
-          });
+          }));
         }
       });
     } catch (_) {}
@@ -343,7 +550,7 @@ async function fetchCategoryDramas(category, page = 1, force = false) {
   if (!force && categoryCache.has(cacheKey)) {
     const cached = categoryCache.get(cacheKey);
     if (Date.now() - cached.timestamp < 10 * 60 * 1000 && cached.dramas.length > 0) {
-      return cached.dramas;
+      return applyCachedKhmerTitles(cached.dramas);
     }
   }
 
@@ -355,7 +562,7 @@ async function fetchCategoryDramas(category, page = 1, force = false) {
     const title = String(item.series_title || item.title || '').trim();
     if (!id || !title || seen.has(id)) return;
     seen.add(id);
-    list.push({
+    list.push(attachReleaseFlags({
       id,
       title,
       titleKhmer: getKhmerTitle(title),
@@ -364,11 +571,31 @@ async function fetchCategoryDramas(category, page = 1, force = false) {
       total: Number(item.episode_count || item.episodeCount) || 80,
       tags: Array.isArray(item.tags) && item.tags.length ? item.tags.slice(0, 3) : [defaultTag],
       category,
-    });
+    }));
   }
 
   try {
-    if (category === 'sad') {
+    if (category === 'anime') {
+      const [r1, r2, r3, r4] = await Promise.all([
+        browseList({ category: 'hot-comic-drama', page: pg }).catch(() => ({ results: [] })),
+        browseList({ category: 'comic-drama', page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('漫剧', { page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('动漫', { page: pg }).catch(() => ({ results: [] })),
+      ]);
+      r1.results?.forEach(i => addItem(i, '🎨 តុក្កតាល្បី'));
+      r2.results?.forEach(i => addItem(i, '🎨 漫剧'));
+      r3.results?.forEach(i => addItem(i, '🎨 漫剧'));
+      r4.results?.forEach(i => addItem(i, '🎨 动漫'));
+    } else if (category === 'ai_anime') {
+      const [r1, r2, r3] = await Promise.all([
+        browseList({ category: 'hot-ai-drama', page: pg }).catch(() => ({ results: [] })),
+        browseList({ category: 'ai-drama', page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('修仙', { page: pg }).catch(() => ({ results: [] })),
+      ]);
+      r1.results?.forEach(i => addItem(i, '🤖 3D / AI'));
+      r2.results?.forEach(i => addItem(i, '🤖 AI 漫剧'));
+      r3.results?.forEach(i => addItem(i, '⚔️ 修仙'));
+    } else if (category === 'sad') {
       const [r1, r2, r3] = await Promise.all([
         searchHongguo('虐恋', { page: pg }).catch(() => ({ results: [] })),
         searchHongguo('苦情', { page: pg }).catch(() => ({ results: [] })),
@@ -444,6 +671,7 @@ async function fetchCategoryDramas(category, page = 1, force = false) {
     console.error(`[Category ${category} p${pg}] Error:`, err.message);
   }
 
+  list.sort((a, b) => (b.releasedToday ? 2 : b.isNewRelease ? 1 : 0) - (a.releasedToday ? 2 : a.isNewRelease ? 1 : 0));
   categoryCache.set(cacheKey, { timestamp: Date.now(), dramas: list });
   return list;
 }
@@ -457,8 +685,11 @@ function startCatalogWarmup() {
   catalogWarmupStarted = true;
   refreshTrendingDramas().then(() => {
     const delays = [
-      ['sad', 500],
-      ['sweet', 1500],
+      ['new', 300],
+      ['anime', 450],
+      ['ai_anime', 750],
+      ['sad', 1100],
+      ['sweet', 1800],
       ['ceo', 2500],
       ['romance', 3500],
       ['comeback', 4500]
@@ -580,24 +811,89 @@ async function fetchEpisodeListSafe(seriesId, force = false) {
 function extractSeriesId(input) {
   if (!input) return null;
   const str = String(input).trim();
-  const multiId = sources.resolveDramaUrlOrId(str);
+  const embeddedUrl = ytdlp.extractFirstHttpUrl(str);
+  const multiId = sources.resolveDramaUrlOrId(embeddedUrl || str);
   if (multiId) return multiId;
   const queryMatch = str.match(/(?:video_)?series_id=(\d+)/);
   if (queryMatch) return queryMatch[1];
-  const pathMatch = str.match(/\/(?:player|detail)\/(\d{10,30})\b/);
+  const pathMatch = str.match(/\/(?:player|detail|series)\/(\d{10,30})\b/);
   if (pathMatch) return pathMatch[1];
   const digitsMatch = str.match(/^\d{10,30}$/);
   if (digitsMatch) return digitsMatch[0];
   return null;
 }
 
-async function smartResolve(input, preferredSource = 'hongguo', cookiesFromBrowser = '') {
-  const str = String(input || '').trim();
-  if (ytdlp.isSocialVideoUrl(str)) {
-    const socialInfo = await ytdlp.probeUrl(str, { cookiesFromBrowser });
-    return { isSocial: true, socialInfo };
+function searchCachedDramasByKhmer(khmerQuery, preferredSource = '') {
+  const q = String(khmerQuery || '').trim().toLowerCase();
+  if (!q) return { matches: [], chineseCandidates: [] };
+
+  const matches = [];
+  const seenIds = new Set();
+  const chineseCandidates = [];
+  const seenCn = new Set();
+
+  const pushDrama = (d, srcDefault = 'hongguo') => {
+    if (!d) return;
+    const id = String(d.id || d.seriesId || '').trim();
+    const title = String(d.title || '').trim();
+    const khmer = String(d.titleKhmer || getKhmerTitle(title) || '').trim();
+    if (!id || !title || seenIds.has(id)) return;
+    if (preferredSource && !['hongguo', 'social'].includes(preferredSource) && d.source && d.source !== preferredSource) {
+      return;
+    }
+    const hay = `${khmer} ${title}`.toLowerCase();
+    if (hay.includes(q)) {
+      seenIds.add(id);
+      matches.push({
+        id,
+        title,
+        titleKhmer: khmer,
+        cover: d.cover || '',
+        heat: d.heat || (d.total ? `${d.total} ភាគ` : 'Hongguo'),
+        total: Number(d.total) || 80,
+        tags: d.tags || ['ស្វែងរក'],
+        source: d.source || srcDefault,
+        rank: matches.length + 1,
+      });
+    }
+  };
+
+  for (const d of cachedTrendingDramas) pushDrama(d, 'hongguo');
+  for (const entry of categoryCache.values()) {
+    for (const d of (entry.dramas || [])) pushDrama(d, 'hongguo');
+  }
+  for (const [sid, cached] of dramaCache.entries()) {
+    const info = cached?.data;
+    if (info) {
+      pushDrama({
+        id: info.series_id || sid,
+        title: info.series_title,
+        titleKhmer: getKhmerTitle(info.series_title),
+        cover: info.cover,
+        total: info.episodes?.length,
+        source: info.source || sources.detectSourceFromId(sid),
+      });
+    }
   }
 
+  for (const [cn, km] of translationsCache.entries()) {
+    if (String(km || '').toLowerCase().includes(q) && !seenCn.has(cn)) {
+      seenCn.add(cn);
+      chineseCandidates.push(cn);
+    }
+  }
+  for (const [cn, km] of KHMER_DICT) {
+    if ((String(km || '').toLowerCase().includes(q) || q.includes(String(km || '').toLowerCase())) && !seenCn.has(cn)) {
+      seenCn.add(cn);
+      chineseCandidates.push(cn);
+    }
+  }
+
+  return { matches, chineseCandidates };
+}
+
+async function smartResolve(input, preferredSource = 'hongguo', cookiesFromBrowser = '') {
+  const str = String(input || '').trim();
   const seriesId = extractSeriesId(str);
   if (seriesId) {
     const info = await fetchEpisodeListSafe(seriesId);
@@ -613,8 +909,55 @@ async function smartResolve(input, preferredSource = 'hongguo', cookiesFromBrows
     };
   }
 
+  if (ytdlp.isSocialVideoUrl(str)) {
+    const socialUrl = ytdlp.extractFirstHttpUrl(str) || str;
+    const socialInfo = await ytdlp.probeUrl(socialUrl, { cookiesFromBrowser });
+    return { isSocial: true, socialInfo };
+  }
+
+  // Support searching by Khmer title (from local cache, dictionary, or Gemini AI keyword translation)
+  let searchQuery = str;
+  if (/[\u1780-\u17FF]/.test(str)) {
+    const khmerHit = searchCachedDramasByKhmer(str, preferredSource);
+    if (khmerHit.matches.length === 1) {
+      const only = khmerHit.matches[0];
+      const info = await fetchEpisodeListSafe(only.id);
+      return {
+        seriesId: String(info.series_id || only.id),
+        source: only.source || 'hongguo',
+        title: info.series_title || only.title,
+        titleKhmer: only.titleKhmer || getKhmerTitle(info.series_title || only.title),
+        cover: info.cover || only.cover,
+        total: info.episodes.length || only.total,
+        episodes: info.episodes,
+        matches: [],
+      };
+    }
+    if (khmerHit.matches.length > 1) {
+      const top = khmerHit.matches[0];
+      return {
+        seriesId: String(top.id),
+        source: top.source || 'hongguo',
+        title: top.title,
+        titleKhmer: top.titleKhmer,
+        cover: top.cover,
+        total: top.total,
+        matches: khmerHit.matches.slice(0, 18),
+      };
+    }
+    if (khmerHit.chineseCandidates.length > 0) {
+      searchQuery = khmerHit.chineseCandidates[0];
+    } else if (loadConfig().GEMINI_API_KEY) {
+      try {
+        const kwPrompt = `Convert this Khmer short-drama search query into 1 concise Chinese (Simplified) search keyword or title (2-6 Chinese characters only, no quotes or punctuation): "${str}"`;
+        const cnKw = (await callGemini(kwPrompt, { temperature: 0.1, maxOutputTokens: 32 }) || '').replace(/[^\u4e00-\u9fffA-Za-z0-9]/g, '').trim();
+        if (cnKw) searchQuery = cnKw;
+      } catch (_) {}
+    }
+  }
+
   if (preferredSource && !['hongguo', 'social'].includes(preferredSource)) {
-    const srcMatches = await sources.searchSource(preferredSource, str, 1, getKhmerTitle);
+    const srcMatches = await sources.searchSource(preferredSource, searchQuery, 1, getKhmerTitle);
     if (srcMatches.length > 0) {
       const top = srcMatches[0];
       if (srcMatches.length === 1) {
@@ -643,7 +986,7 @@ async function smartResolve(input, preferredSource = 'hongguo', cookiesFromBrows
     throw new Error(`រកមិនឃើញរឿង "${str}" នៅលើ ${preferredSource} ទេ — សូមសាកល្បងពាក្យផ្សេង ឬបិទភ្ជាប់ Link!`);
   }
 
-  const searchRes = await searchHongguo(str);
+  const searchRes = await searchHongguo(searchQuery);
   if (searchRes && Array.isArray(searchRes.results) && searchRes.results.length > 0) {
     const matches = searchRes.results.slice(0, 12).map((item, idx) => ({
       id: String(item.series_id),
@@ -670,8 +1013,209 @@ async function smartResolve(input, preferredSource = 'hongguo', cookiesFromBrows
     };
   }
 
-  throw new Error(`រកមិនឃើញរឿងសម្រាប់ "${str}" ទេ — សូមសាកល្បងឈ្មោះចិន ឬបិទភ្ជាប់ Link / Series ID!`);
+  throw new Error(`រកមិនឃើញរឿងសម្រាប់ "${str}" ទេ — សូមសាកល្បងឈ្មោះរឿង ឬបិទភ្ជាប់ Link / Series ID!`);
 }
+
+// ===== Smart Related / Similar Dramas Recommendation Engine =====
+const THEME_CATEGORY_RULES = [
+  { cat: 'anime', re: /第[一二三四五六七八九十百\d]+[季部]|漫剧|动漫|修仙|仙尊|仙帝|灵根|死考|末世|系统|觉醒|异能|吞噬|诡异|全球/i, kw: ['修仙', '漫剧', '末世', '系统', '觉醒', '仙'] },
+  { cat: 'ceo', re: /总裁|霍总|傅总|薄总|顾总|陆总|总|豪门|首富|千金|少爷|少夫人|夫人|财阀/i, kw: ['总裁', '豪门', '千金', '首富', '少夫人'] },
+  { cat: 'costume', re: /穿越|古装|重生|王爷|皇上|娘娘|太子|侯府|世子|将军|八零|七零|六零|年代|嫡女/i, kw: ['穿越', '重生', '古装', '王爷', '八零'] },
+  { cat: 'comeback', re: /逆袭|战神|龙王|龙主|神医|无敌|归来|高手|下山|打脸|复仇/i, kw: ['逆袭', '战神', '神医', '龙王', '归来'] },
+  { cat: 'sad', re: /虐|悔|离婚|和离|前夫|前妻|眼泪|蚀骨|罪|替身|断亲/i, kw: ['虐恋', '前夫', '追妻', '离婚'] },
+  { cat: 'sweet', re: /甜|宠|闪婚|替嫁|先婚后爱|暗恋|一见钟情|心动|玫瑰|娇妻/i, kw: ['甜宠', '闪婚', '先婚后爱', '替嫁'] },
+  { cat: 'family', re: /萌宝|带娃|家庭|婆媳|妈妈|爹地|亲情|团宠|全家/i, kw: ['萌宝', '团宠', '带娃', '家庭'] },
+  { cat: 'comedy', re: /搞笑|喜剧|沙雕|暴富|反派|吃瓜|读心/i, kw: ['读心', '搞笑', '喜剧'] },
+  { cat: 'suspense', re: /悬疑|惊悚|迷雾|真相|凶手|秘密/i, kw: ['悬疑', '真相'] },
+];
+
+function inferDramaCategoryAndKeyword(title = '', seriesId = '') {
+  const clean = String(title || '').trim();
+  const sid = String(seriesId || '').trim();
+
+  // Check if already tagged in categoryCache or cachedTrendingDramas
+  let knownCat = '';
+  let knownTags = [];
+  for (const [key, entry] of categoryCache.entries()) {
+    const catName = key.replace(/_p\d+$/, '');
+    const hit = (entry.dramas || []).find((d) => String(d.id) === sid || d.title === clean);
+    if (hit) {
+      if (!knownCat && catName !== 'trending' && catName !== 'new') knownCat = catName;
+      if (Array.isArray(hit.tags) && hit.tags.length) knownTags = hit.tags;
+    }
+  }
+  if (!knownTags.length) {
+    const tHit = cachedTrendingDramas.find((d) => String(d.id) === sid || d.title === clean);
+    if (tHit && Array.isArray(tHit.tags)) knownTags = tHit.tags;
+  }
+
+  // Extract base series prefix if multi-season or colon/之 separated
+  let prefixKw = '';
+  const seasonBase = clean.replace(/第[一二三四五六七八九十百\d]+[季部].*$/, '').trim();
+  const splitParts = seasonBase.split(/[：:之，,、\s]+/).filter((x) => x.length >= 2);
+  if (splitParts.length > 0 && splitParts[0].length >= 2 && splitParts[0].length <= 6) {
+    prefixKw = splitParts[0];
+  } else if (seasonBase.length >= 2) {
+    prefixKw = seasonBase.slice(0, 4);
+  }
+
+  let matchedCat = knownCat || '';
+  let themeKw = '';
+  const combinedText = `${clean} ${knownTags.join(' ')}`;
+  for (const rule of THEME_CATEGORY_RULES) {
+    if (rule.re.test(combinedText)) {
+      if (!matchedCat) matchedCat = rule.cat;
+      const foundWord = rule.kw.find((w) => combinedText.includes(w)) || rule.kw[0];
+      if (!themeKw) themeKw = foundWord;
+      break;
+    }
+  }
+
+  if (!matchedCat) matchedCat = 'trending';
+  const searchKw = prefixKw || themeKw || clean.slice(0, 3) || '短剧';
+  return { category: matchedCat, searchKw, themeKw: themeKw || searchKw, knownTags };
+}
+
+const ENDLESS_ANIME_KEYWORDS = [
+  '漫剧', '动漫', '修仙', '末世', '系统', '觉醒', '诡异', '仙尊', '灵根', '异能',
+  '武神', '神豪', '无敌', '玄幻', '都市修仙', '全球', '无限', '重生', '穿越', '逆袭',
+];
+const ENDLESS_DRAMA_KEYWORDS = [
+  '总裁', '闪婚', '重生', '穿越', '逆袭', '甜宠', '虐恋', '豪门', '千金', '战神',
+  '神医', '古装', '萌宝', '前夫', '替嫁', '先婚后爱', '追妻', '暗恋', '八零', '七零',
+  '团宠', '家庭', '悬疑', '搞笑', '读心', '复仇', '打脸', '首富', '夫人', '王爷',
+  '嫡女', '离婚', '世子', '大叔', '保镖', '女帝', '高手', '下山', '隐藏', '相亲',
+];
+const ENDLESS_CATEGORY_ORDER = [
+  'romance', 'ceo', 'sweet', 'comeback', 'costume', 'sad', 'new', 'family', 'comedy', 'suspense', 'anime', 'ai_anime',
+];
+
+async function getRelatedDramas({ seriesId = '', title = '', source = 'hongguo', page = 1, excludeIds = [] } = {}) {
+  const sid = String(seriesId || '').trim();
+  const src = String(source || sources.detectSourceFromId(sid) || 'hongguo').toLowerCase();
+  const pg = Math.max(1, parseInt(page, 10) || 1);
+  let origTitle = String(title || '').trim();
+  if (!origTitle && sid) {
+    origTitle = findDramaMetaBySeriesId(sid).title || '';
+  }
+
+  const { category, searchKw, themeKw, knownTags } = inferDramaCategoryAndKeyword(origTitle, sid);
+  const results = [];
+  const seen = new Set(Array.isArray(excludeIds) ? excludeIds.map(String) : []);
+  if (sid) seen.add(sid);
+
+  const pushCandidate = (item, badge = '') => {
+    if (!item) return;
+    const id = String(item.series_id || item.seriesId || item.id || '').trim();
+    const itemTitle = String(item.series_title || item.title || '').trim();
+    if (!id || !itemTitle || seen.has(id) || itemTitle === origTitle) return;
+    seen.add(id);
+    results.push(attachReleaseFlags({
+      id,
+      title: itemTitle,
+      titleKhmer: item.titleKhmer || getKhmerTitle(itemTitle),
+      cover: item.cover || item.series_cover || '',
+      heat: badge || item.heat || item.heatText || (item.episode_count ? `${item.episode_count} ភាគ` : ''),
+      total: Number(item.episode_count || item.total || item.episodeCount) || 80,
+      tags: Array.isArray(item.tags) && item.tags.length ? item.tags.slice(0, 3) : (knownTags.length ? knownTags.slice(0, 2) : [category]),
+      source: item.source || src,
+    }));
+  };
+
+  if (src !== 'hongguo' && src !== 'social') {
+    const [searchList, catData] = await Promise.all([
+      searchKw ? sources.searchSource(src, searchKw, pg, getKhmerTitle).catch(() => []) : Promise.resolve([]),
+      sources.browseSourceCatalog(src, { page: pg }, getKhmerTitle).catch(() => ({ dramas: [] })),
+    ]);
+    for (const d of (searchList || [])) pushCandidate(d, src.toUpperCase());
+    for (const d of (catData?.dramas || [])) pushCandidate(d, src.toUpperCase());
+    return {
+      dramas: applyCachedKhmerTitles(results.slice(0, 24)),
+      category,
+      keyword: searchKw,
+      hasMore: true,
+    };
+  }
+
+  const isAnime = category === 'anime' || category === 'ai_anime';
+  const basePool = isAnime ? ENDLESS_ANIME_KEYWORDS : ENDLESS_DRAMA_KEYWORDS;
+  const kwPool = [...new Set([searchKw, themeKw, ...knownTags, ...basePool].filter(Boolean))];
+  const catPool = isAnime
+    ? ['anime', 'ai_anime', 'costume', 'comeback', 'suspense', 'new']
+    : [...new Set([category, ...ENDLESS_CATEGORY_ORDER].filter(Boolean))];
+
+  const kwIdx1 = ((pg - 1) * 2) % kwPool.length;
+  const kwIdx2 = ((pg - 1) * 2 + 1) % kwPool.length;
+  const kw1 = kwPool[kwIdx1];
+  const kw2 = kwPool[kwIdx2];
+  const kwSubPage = Math.min(20, Math.floor((pg - 1) / Math.max(1, Math.floor(kwPool.length / 2))) + 1);
+
+  const targetCat = catPool[(pg - 1) % catPool.length];
+  const catSubPage = Math.min(25, Math.floor((pg - 1) / catPool.length) + 1);
+
+  const [kwSearchRes, themeSearchRes, catDramas] = await Promise.all([
+    kw1 ? searchHongguo(kw1, { page: kwSubPage }).catch(() => ({ results: [] })) : Promise.resolve({ results: [] }),
+    (kw2 && kw2 !== kw1) ? searchHongguo(kw2, { page: kwSubPage }).catch(() => ({ results: [] })) : Promise.resolve({ results: [] }),
+    fetchCategoryDramas(targetCat, catSubPage, false).catch(() => []),
+  ]);
+
+  for (const item of (kwSearchRes?.results || [])) pushCandidate(item, pg === 1 ? '🔥 ស្រដៀងគ្នា' : '');
+  for (const item of (themeSearchRes?.results || [])) pushCandidate(item, pg === 1 ? '✨ ប្រភេទដូចគ្នា' : '');
+  for (const item of (catDramas || [])) pushCandidate(item);
+
+  // If still under 18 items, pull from rotating trending / browse pages
+  if (results.length < 18) {
+    const startIdx = ((pg - 1) * 12) % Math.max(1, cachedTrendingDramas.length);
+    for (let i = 0; i < cachedTrendingDramas.length && results.length < 18; i++) {
+      pushCandidate(cachedTrendingDramas[(startIdx + i) % cachedTrendingDramas.length]);
+    }
+  }
+
+  const finalSlice = applyCachedKhmerTitles(results.slice(0, 24));
+  return {
+    dramas: finalSlice,
+    category,
+    keyword: kw1 || searchKw,
+    hasMore: true,
+  };
+}
+
+function getInstantRelatedDramasSync(origTitle = '', seriesId = '', source = 'hongguo') {
+  const sid = String(seriesId || '').trim();
+  const { category } = inferDramaCategoryAndKeyword(origTitle, sid);
+  const seen = new Set(sid ? [sid] : []);
+  const out = [];
+  const push = (d) => {
+    if (!d) return;
+    const id = String(d.id || d.seriesId || '').trim();
+    const title = String(d.title || '').trim();
+    if (!id || !title || seen.has(id) || title === origTitle) return;
+    seen.add(id);
+    out.push({
+      ...d,
+      id,
+      title,
+      titleKhmer: d.titleKhmer || getKhmerTitle(title),
+      source: d.source || source || 'hongguo',
+    });
+  };
+  const catEntry = categoryCache.get(`${category}_p1`);
+  if (catEntry && Array.isArray(catEntry.dramas)) {
+    for (const d of catEntry.dramas) {
+      push(d);
+      if (out.length >= 18) break;
+    }
+  }
+  if (out.length < 18) {
+    for (const d of cachedTrendingDramas) {
+      push(d);
+      if (out.length >= 18) break;
+    }
+  }
+  return { dramas: out.slice(0, 18), category };
+}
+
+const SERVER_BOOT_ID = Date.now();
 
 // ===== Real-Time Broadcast & Multi-Job Snapshot State =====
 function broadcastSSE(data) {
@@ -833,7 +1377,7 @@ function cancelAllActiveJobs(reasonMsg = '🛑 បានបញ្ឈប់កា
 
 // ===== Turbo Batch Download Engine with Auto-Retry & ByteVC2 Support =====
 async function runBatchDownload(job) {
-  const { seriesId, selectedEps, autoMerge, workers = 8, qualityMode = '1080p' } = job;
+  const { seriesId, selectedEps, autoMerge, compressMerge = false, workers = 8, qualityMode = '1080p' } = job;
   const signal = job.abortController.signal;
 
   // Rolling 2.5s byte window for accurate live MB/s measurement
@@ -1173,7 +1717,7 @@ async function runBatchDownload(job) {
         emitSnapshot(job, true);
       } catch (err) {
         if (job.cancelled || signal.aborted || err.message === 'CANCELLED') return;
-        const errMsg = String(err.message || 'Unknown error').slice(0, 120);
+        const errMsg = dl.translateNativeErrorToKhmer(err.message || 'Unknown error').slice(0, 140);
         failedMap.set(epNum, errMsg);
         job.episodeStates[epNum] = { status: 'error', percent: 0, error: errMsg, text: '❌ បរាជ័យ' };
         pushJobLog(job, `❌ ភាគ ${epNum}${isRetryPass ? ' (Retry)' : ''}: ${errMsg}`);
@@ -1254,14 +1798,17 @@ async function runBatchDownload(job) {
       }
       if (allValidEntries.length >= 2) {
         job.status = 'merging';
-        pushJobLog(job, `🎞️ ចាប់ផ្ដើមផ្គុំ Full Movie ចំនួន ${allValidEntries.length} ភាគ...`);
+        job.speedMb = 0;
+        job.speedText = compressMerge ? 'FFmpeg Compress' : 'FFmpeg Merge';
+        pushJobLog(job, `${compressMerge ? '🗜️ ចាប់ផ្ដើមបង្ហាប់ និងផ្គុំ' : '🎞️ ចាប់ផ្ដើមផ្គុំ'} Full Movie ចំនួន ${allValidEntries.length} ភាគ...`);
         emitSnapshot(job, true);
         try {
           const merged = await dl.mergeEpisodesToMovie(outputDir, cleanTitle, allValidEntries, {
+            compress: Boolean(compressMerge),
             signal,
             activeChildren: job.activeChildren,
             onProgress: (pct, msg) => {
-              job.progress = pct;
+              job.progress = pct >= 100 ? 100 : Math.min(99, Math.round(pct));
               job.message = msg;
               emitSnapshot(job, false);
             },
@@ -1310,9 +1857,9 @@ async function runBatchDownload(job) {
 // ===== Gemini AI Helper =====
 const GEMINI_MODELS = [
   'gemini-flash-lite-latest',
-  'gemini-flash-latest',
   'gemini-3.5-flash-lite',
   'gemini-3.8-flash',
+  'gemini-flash-latest',
 ];
 
 async function testGeminiKey(apiKey) {
@@ -1330,7 +1877,7 @@ async function testGeminiKey(apiKey) {
   throw lastError;
 }
 
-async function callGemini(prompt) {
+async function callGemini(prompt, { validate = null, ...opts } = {}) {
   const cfg = loadConfig();
   const apiKey = cfg.GEMINI_API_KEY;
   if (!apiKey) throw new Error('មិនទាន់ដាក់ Gemini API Key — ចុច 🔑 Gemini Key ក្នុង Topbar');
@@ -1338,21 +1885,26 @@ async function callGemini(prompt) {
   let lastError = null;
   for (const model of GEMINI_MODELS) {
     try {
-      return await callGeminiModel(model, apiKey, prompt);
+      const out = await callGeminiModel(model, apiKey, prompt, opts);
+      if (typeof validate === 'function' && !validate(out)) {
+        lastError = new Error(`Model ${model} returned unclean translation`);
+        continue;
+      }
+      return out;
     } catch (err) {
       lastError = err;
       const m = err.message || '';
       if (m.includes('API_KEY_INVALID') || m.includes('API key not valid')) throw err;
     }
   }
-  throw lastError;
+  throw lastError || new Error('Gemini API failed');
 }
 
-function callGeminiModel(model, apiKey, prompt) {
+function callGeminiModel(model, apiKey, prompt, { temperature = 0.2, maxOutputTokens = 2048 } = {}) {
   const endpoint = new URL(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`);
   const bodyStr = JSON.stringify({
     contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.3, maxOutputTokens: 512 },
+    generationConfig: { temperature, maxOutputTokens },
   });
   return new Promise((resolve, reject) => {
     const reqG = https.request({
@@ -1363,15 +1915,20 @@ function callGeminiModel(model, apiKey, prompt) {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(bodyStr),
       },
-      timeout: 12000,
+      timeout: 25000,
     }, (r) => {
-      let data = '';
-      r.on('data', c => data += c);
+      let chunks = [];
+      r.on('data', c => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(String(c), 'utf8')));
       r.on('end', () => {
         try {
+          const data = Buffer.concat(chunks).toString('utf8');
           const json = JSON.parse(data);
           if (json.error) return reject(new Error(json.error.message || 'Gemini API error'));
-          const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          const parts = json.candidates?.[0]?.content?.parts || [];
+          const text = parts
+            .filter(p => p && !p.thought && typeof p.text === 'string')
+            .map(p => p.text)
+            .join('');
           resolve(text.trim());
         } catch (e) { reject(e); }
       });
@@ -1383,14 +1940,166 @@ function callGeminiModel(model, apiKey, prompt) {
   });
 }
 
+function buildKhmerDramaPrompt(input, isBatch = false) {
+  const coreRules = `You are an expert Khmer (Cambodian) film & short drama title localizer (អ្នកបកប្រែចំណងជើងរឿងភាគខ្លីចិន).
+Follow strict, natural Khmer grammar and phrasing:
+1. Word Order: Always use natural Khmer syntax (Noun + Adjective, Subject + Verb + Object). Never produce stiff word-for-word Chinese-ordered phrases (avoid awkward literal "របស់" chains). Make the title smooth, dramatic, and easy for Cambodian viewers to understand immediately.
+2. Script Purity: Use ONLY standard Unicode Khmer characters (and Arabic/Khmer numerals if needed). NEVER include Thai, Lao, Greek, Chinese characters, or broken symbols.
+3. Domain Terminology:
+   - 总裁 / 总 -> លោកប្រធាន... (e.g. 霍总 -> លោកប្រធានហួ, 傅总 -> លោកប្រធានហ្វូ, 薄总 -> លោកប្រធានប៉ូ)
+   - 少 / 少爷 -> អ្នកប្រុស... (e.g. 顾少 -> អ្នកប្រុសគូ, 陆少 -> អ្នកប្រុសលូ)
+   - 少夫人 -> អ្នកនាងតូច or ភរិយាក្មេង (never លោកជំទាវ)
+   - 凡人 -> មនុស្សលោក or មនុស្សសាមញ្ញ (never មនុស្សទូទៅ)
+   - 第X季 / 第X部 / 一季 -> វគ្គទីX or វគ្គX (never រដូវកាល)
+   - 战神 -> ស្តេចសឹក, 重生 -> ចាប់កំណើតថ្មី, 闪婚 -> រៀបការបន្ទាន់, 替嫁 -> រៀបការជំនួស
+   - 团宠 -> កំណប់សំណព្វចិត្តគ្រប់គ្នា, 和离 -> ផ្ដាច់ចំណងស្វាមី or លែងលះ, 穿越 -> ឆ្លងភព
+   - 六零/七零/八零 -> សម័យឆ្នាំ៦០ / សម័យឆ្នាំ៧០ / សម័យឆ្នាំ៨០, 魔域 -> ដែនបិសាច, BOSS -> កំពូលមេខ្លោង / មេធំ`;
+
+  if (!isBatch) {
+    return `${coreRules}
+
+Return ONLY the complete translated Khmer title as plain text, with NO quotes, explanations, brackets, or Chinese characters.
+Chinese title: "${input}"
+Khmer title:`;
+  }
+
+  return `${coreRules}
+
+Translate each Chinese title in the JSON array below into natural, grammatical Khmer in the EXACT same order.
+Return ONLY a valid JSON array of strings matching the input array length. Do NOT wrap in markdown or backticks.
+Titles:
+${JSON.stringify(input)}`;
+}
+
+async function translateDramaTitleSmart(title, { forceAI = false } = {}) {
+  const clean = String(title || '').trim();
+  if (!clean) return '';
+
+  if (!forceAI && translationsCache.has(clean)) {
+    const cached = translationsCache.get(clean);
+    if (cached && isCleanKhmerTranslation(clean, cached)) return cached;
+  }
+
+  // 1. Try Gemini AI with grammatical Khmer localization prompt
+  try {
+    const prompt = buildKhmerDramaPrompt(clean, false);
+    const khmer = await callGemini(prompt, {
+      temperature: 0.2,
+      maxOutputTokens: 512,
+      validate: (txt) => isCleanKhmerTranslation(clean, txt),
+    });
+    const cleanKhmer = (khmer || '').replace(/^["'«“\s]+|["'»”\s]+$/g, '').trim();
+    if (isCleanKhmerTranslation(clean, cleanKhmer)) {
+      translationsCache.set(clean, cleanKhmer);
+      saveTranslationsCache();
+      return cleanKhmer;
+    }
+  } catch (_) {}
+
+  // 2. Fallback to dictionary
+  const fallback = getKhmerTitle(clean);
+  if (fallback) {
+    translationsCache.set(clean, fallback);
+    saveTranslationsCache();
+    return fallback;
+  }
+
+  return clean;
+}
+
+async function batchTranslateTitlesSmart(titles = []) {
+  if (!Array.isArray(titles) || titles.length === 0) return {};
+  const result = {};
+  const toTranslate = [];
+  const seenToTranslate = new Set();
+
+  for (const t of titles) {
+    const clean = String(t || '').trim();
+    if (!clean) continue;
+    const cached = translationsCache.get(clean);
+    if (cached && isCleanKhmerTranslation(clean, cached)) {
+      result[clean] = cached;
+    } else if (!seenToTranslate.has(clean)) {
+      seenToTranslate.add(clean);
+      toTranslate.push(clean);
+    }
+  }
+
+  if (toTranslate.length === 0) return result;
+  if (!loadConfig().GEMINI_API_KEY) {
+    for (const orig of toTranslate) {
+      const fallback = getKhmerTitle(orig);
+      if (fallback) result[orig] = fallback;
+    }
+    return result;
+  }
+
+  // Process in chunks of up to 12 titles with generous token limit so nothing gets cut off
+  const chunks = [];
+  for (let i = 0; i < toTranslate.length; i += 12) {
+    chunks.push(toTranslate.slice(i, i + 12));
+  }
+
+  async function translateFallbackSingles(items) {
+    for (const orig of items) {
+      try {
+        const single = await translateDramaTitleSmart(orig, { forceAI: true });
+        if (single && isCleanKhmerTranslation(orig, single)) result[orig] = single;
+      } catch (_) {}
+    }
+  }
+
+  for (const chunk of chunks) {
+    try {
+      const prompt = buildKhmerDramaPrompt(chunk, true);
+      const raw = await callGemini(prompt, { temperature: 0.2, maxOutputTokens: 2048 });
+      let list = null;
+      try {
+        const cleaned = (raw || '').replace(/```(?:json)?|```/g, '').trim();
+        list = JSON.parse(cleaned);
+      } catch (_) {
+        const lines = (raw || '').split('\n').map(l => l.replace(/^[\s\d\-•*."']+|[",\s]+$/g, '').trim()).filter(Boolean);
+        if (lines.length === chunk.length) list = lines;
+      }
+
+      if (Array.isArray(list) && list.length === chunk.length) {
+        const missed = [];
+        chunk.forEach((orig, idx) => {
+          const kh = String(list[idx] || '').replace(/^["'«“\s]+|["'»”\s]+$/g, '').trim();
+          if (isCleanKhmerTranslation(orig, kh)) {
+            translationsCache.set(orig, kh);
+            result[orig] = kh;
+          } else {
+            missed.push(orig);
+          }
+        });
+        saveTranslationsCache();
+        if (missed.length) await translateFallbackSingles(missed);
+      } else {
+        await translateFallbackSingles(chunk);
+      }
+    } catch (err) {
+      const msg = String(err?.message || '');
+      if (msg.includes('API_KEY_INVALID') || msg.includes('API key not valid') || msg.includes('មិនទាន់ដាក់ Gemini API Key')) {
+        break;
+      }
+      await translateFallbackSingles(chunk);
+    }
+  }
+
+  return result;
+}
+
 // ===== HTTP Request Body Helper =====
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
-    let body = '';
-    req.on('data', chunk => body += chunk);
+    const chunks = [];
+    req.on('data', chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), 'utf8')));
     req.on('end', () => {
-      try { resolve(JSON.parse(body || '{}')); }
-      catch (e) { reject(e); }
+      try {
+        const body = Buffer.concat(chunks).toString('utf8');
+        resolve(JSON.parse(body || '{}'));
+      } catch (e) { reject(e); }
     });
     req.on('error', reject);
   });
@@ -1579,6 +2288,42 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (url.pathname === '/api/dramabox-token' && req.method === 'GET') {
+    return sendJson(res, { success: true, ...sources.getCustomDramaBoxTokenStatus() });
+  }
+
+  if (url.pathname === '/api/dramabox-token' && req.method === 'POST') {
+    try {
+      const { token } = await readJsonBody(req);
+      const cleanToken = String(token || '').replace(/^Bearer\s+/i, '').trim();
+      const cfg = loadConfig();
+      cfg.DRAMABOX_VIP_TOKEN = cleanToken;
+      saveConfig(cfg);
+      const status = sources.setCustomDramaBoxToken(cleanToken);
+      dramaCache.clear();
+      return sendJson(res, {
+        success: true,
+        ...status,
+        message: status.hasCustomToken
+          ? '✅ បានរក្សាទុក DramaBox VIP Token ផ្ទាល់ខ្លួនរួចរាល់!'
+          : '🔄 បានត្រឡប់ទៅប្រើប្រព័ន្ធ Guest SAPI វិញហើយ!',
+      });
+    } catch (err) {
+      return sendJson(res, { success: false, error: err.message }, 500);
+    }
+  }
+
+  if (url.pathname === '/api/find-full-movie' && req.method === 'GET') {
+    const title = String(url.searchParams.get('title') || '').trim();
+    if (!title) return sendJson(res, { success: true, movies: [] });
+    try {
+      const movies = await sources.findFullMovieMirrors(title);
+      return sendJson(res, { success: true, title, movies });
+    } catch (err) {
+      return sendJson(res, { success: false, movies: [], error: err.message });
+    }
+  }
+
   if (url.pathname === '/api/sources') {
     const [ver, aria2Ver, nm3u8Ver, gpuEnc] = await Promise.all([
       ytdlp.getVersion(),
@@ -1592,8 +2337,58 @@ const server = http.createServer(async (req, res) => {
       ytdlp: { available: ytdlp.isAvailable(), version: ver },
       aria2c: { available: ytdlp.isAria2Available(), version: aria2Ver, rpc: dl.getAria2RpcStatus() },
       nm3u8dl: { available: ytdlp.isNm3u8dlAvailable(), version: nm3u8Ver },
+      librempeg: { available: fs.existsSync(dl.LIBREMPEG_EXE) },
       gpu: { available: Boolean(gpuEnc), encoder: gpuEnc || null },
     });
+  }
+
+  if (url.pathname === '/api/repair-engine' && req.method === 'POST') {
+    try {
+      const body = await readJsonBody(req).catch(() => ({}));
+      const steps = [];
+      dramaCache.clear();
+      categoryCache.clear();
+
+      // 1. Re-register fresh HongGuo playback identity
+      let deviceOk = false;
+      try {
+        const prev = await getPlaybackDevice(appRequestJson).catch(() => null);
+        const fresh = prev
+          ? await getPlaybackDevice(appRequestJson, prev)
+          : await dl.registerPlaybackDevice(appRequestJson);
+        deviceOk = Boolean(fresh && fresh.device_id);
+        steps.push(deviceOk ? '✅ ភ្ជាប់ប្រព័ន្ធ HongGuo v5 ថ្មីរួចរាល់' : '⚠️ មិនអាចចុះឈ្មោះ Device ថ្មីបានទេ');
+      } catch (e) {
+        steps.push('⚠️ HongGuo Device: ' + dl.translateNativeErrorToKhmer(e.message));
+      }
+
+      // 2. Ensure aria2c JSON-RPC daemon is healthy
+      try {
+        if (ytdlp.isAria2Available()) {
+          const st = await dl.ensureAria2Daemon();
+          steps.push(`✅ aria2c RPC ដំណើរការល្អ (Port ${st.port})`);
+        }
+      } catch (_) {}
+
+      // 3. Optionally self-update yt-dlp.exe
+      let ytdlpVer = await ytdlp.getVersion();
+      if (body && body.updateYtdlp && ytdlp.isAvailable()) {
+        const up = await ytdlp.updateYtdlpBinary();
+        ytdlpVer = up.version || ytdlpVer;
+        steps.push(`✅ yt-dlp (${ytdlpVer || 'OK'})`);
+      }
+
+      return sendJson(res, {
+        success: true,
+        deviceOk,
+        ytdlpVersion: ytdlpVer,
+        aria2Rpc: dl.getAria2RpcStatus(),
+        librempeg: fs.existsSync(dl.LIBREMPEG_EXE),
+        message: steps.join(' • ') || '✅ ជួសជុលប្រព័ន្ធរួចរាល់!',
+      });
+    } catch (err) {
+      return sendJson(res, { success: false, error: dl.translateNativeErrorToKhmer(err.message) }, 500);
+    }
   }
 
   if (url.pathname === '/api/categories') {
@@ -1663,6 +2458,31 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, { success: true, count: cachedTrendingDramas.length, dramas: cachedTrendingDramas });
   }
 
+  if (url.pathname === '/api/related-dramas' && req.method === 'GET') {
+    const sid = url.searchParams.get('seriesId') || '';
+    const title = url.searchParams.get('title') || '';
+    const source = url.searchParams.get('source') || 'hongguo';
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+    const excludeRaw = url.searchParams.get('exclude') || '';
+    const excludeIds = excludeRaw ? excludeRaw.split(',').map((s) => s.trim()).filter(Boolean) : [];
+    try {
+      const rel = await getRelatedDramas({ seriesId: sid, title, source, page, excludeIds });
+      return sendJson(res, {
+        success: true,
+        seriesId: sid,
+        source,
+        page,
+        category: rel.category,
+        keyword: rel.keyword,
+        count: rel.dramas.length,
+        hasMore: true,
+        dramas: rel.dramas,
+      });
+    } catch (err) {
+      return sendJson(res, { success: false, dramas: [], error: dl.translateNativeErrorToKhmer(err.message) });
+    }
+  }
+
   // Scanned episodes API: validates file headers/size, cleans temp junk, reports broken 0-byte files!
   if (url.pathname === '/api/scanned-episodes') {
     const sid = url.searchParams.get('seriesId');
@@ -1678,6 +2498,17 @@ const server = http.createServer(async (req, res) => {
       const lockedEps = Array.isArray(info.episodes)
         ? info.episodes.filter((e) => e.locked).map((e) => Number(e.vid_index))
         : [];
+      let titleKhmer = getKhmerTitle(info.series_title);
+      if ((!titleKhmer || titleKhmer === info.series_title) && loadConfig().GEMINI_API_KEY) {
+        try {
+          titleKhmer = await translateDramaTitleSmart(info.series_title);
+        } catch (_) {}
+      }
+      const instantRel = getInstantRelatedDramasSync(info.series_title, String(info.series_id || sid), info.source || sources.detectSourceFromId(sid));
+      const hiResDisplayCover = dl.upgradeCoverUrlToHighRes(info.cover || '', { forDisplay: true }) || info.cover || '';
+      if (info.cover && fs.existsSync(outputDir)) {
+        dl.saveCoverImage(outputDir, info.cover).catch(() => {});
+      }
       return sendJson(res, {
         success: true,
         seriesId: String(info.series_id || sid),
@@ -1686,8 +2517,8 @@ const server = http.createServer(async (req, res) => {
         freeCount: Math.max(0, actualTotal - lockedEps.length),
         lockedEps,
         title: info.series_title,
-        titleKhmer: getKhmerTitle(info.series_title),
-        cover: info.cover || '',
+        titleKhmer: titleKhmer || getKhmerTitle(info.series_title),
+        cover: hiResDisplayCover,
         webAccessible: info.web_accessible_episodes ?? null,
         downloaded: scan.downloaded,
         broken: scan.broken.map(b => b.ep),
@@ -1695,9 +2526,51 @@ const server = http.createServer(async (req, res) => {
         hasMerged,
         mergedMovies,
         outputDir,
+        relatedDramas: instantRel.dramas,
+        relatedCategory: instantRel.category,
       });
     } catch (err) {
       return sendJson(res, { success: false, total: 0, downloaded: [], broken: [], error: err.message });
+    }
+  }
+
+  // Download Ultra-HD Studio Master Cover Poster (cover.jpg)
+  if (url.pathname === '/api/cover-hd' && req.method === 'GET') {
+    const sid = url.searchParams.get('seriesId') || '';
+    const coverParam = url.searchParams.get('cover') || '';
+    const titleParam = url.searchParams.get('title') || '';
+    try {
+      let rawCover = coverParam;
+      let rawTitle = titleParam;
+      if (sid && (!rawCover || !rawTitle)) {
+        const info = await fetchEpisodeListSafe(sid).catch(() => null);
+        if (info) {
+          rawCover = rawCover || info.cover || '';
+          rawTitle = rawTitle || info.series_title || '';
+        }
+      }
+      if (!rawCover) {
+        res.writeHead(404);
+        return res.end('Cover not found');
+      }
+      const cleanTitle = dl.sanitizeTitle(rawTitle || 'Drama', sid || 'cover');
+      const outputDir = path.join(getDownloadDir(), cleanTitle);
+      const savedPath = await dl.saveCoverImage(outputDir, rawCover, { force: true });
+      if (!savedPath || !fs.existsSync(savedPath)) {
+        res.writeHead(502);
+        return res.end('Failed to download HD cover');
+      }
+      const buf = fs.readFileSync(savedPath);
+      const fileName = `${cleanTitle} - Cover HD.jpg`;
+      res.writeHead(200, {
+        'Content-Type': 'image/jpeg',
+        'Content-Length': buf.length,
+        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+      });
+      return res.end(buf);
+    } catch (err) {
+      res.writeHead(500);
+      return res.end(err.message);
     }
   }
 
@@ -1722,7 +2595,7 @@ const server = http.createServer(async (req, res) => {
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
     });
-    res.write(`data: ${JSON.stringify({ type: 'init', snapshot: getPrimaryJobSnapshot(), jobs: getAllJobSnapshots(), summary: getJobsSummary() })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'init', bootId: SERVER_BOOT_ID, snapshot: getPrimaryJobSnapshot(), jobs: getAllJobSnapshots(), summary: getJobsSummary() })}\n\n`);
     const clientId = Date.now() + Math.random();
     progressClients.push({ id: clientId, res });
     const heartbeat = setInterval(() => {
@@ -1748,6 +2621,10 @@ const server = http.createServer(async (req, res) => {
     try {
       const items = dl.scanDramaLibrary(getDownloadDir(), buildKnownMetaByFolder());
       for (const item of items) {
+        if (!item.titleKhmer || /[\u3400-\u9fff]/.test(item.titleKhmer)) {
+          const kh = getKhmerTitle(item.title);
+          if (kh) item.titleKhmer = kh;
+        }
         if (!findActiveJob(item.seriesId, item.folder)) {
           dl.syncEpisodeFileTimestamps(item.path);
         }
@@ -2013,7 +2890,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/start-download' && req.method === 'POST') {
     try {
       const {
-        seriesId, selectedEps, autoMerge, workers, qualityMode,
+        seriesId, selectedEps, autoMerge, compressMerge, workers, qualityMode,
         title, titleKhmer, cover, total,
       } = await readJsonBody(req);
       const isAllMode = selectedEps === 'all' || selectedEps == null;
@@ -2052,8 +2929,9 @@ const server = http.createServer(async (req, res) => {
         completed: 0,
         failed: 0,
         workers: Number(workers) || 8,
-        qualityMode: qualityMode === 'fast' ? 'fast' : '1080p',
+        qualityMode: ['fast', '1080p', '720p'].includes(qualityMode) ? qualityMode : 'fast',
         autoMerge: Boolean(autoMerge),
+        compressMerge: Boolean(compressMerge),
         downloadedBytes: 0,
         speedMb: 0,
         speedText: '0.0 MB/s',
@@ -2118,7 +2996,8 @@ const server = http.createServer(async (req, res) => {
   // Dedicated On-Demand Full / Sequential Movie Merger (accepts seriesId OR folder + optional selectedEps / fromEp..toEp)
   if (url.pathname === '/api/merge-drama' && req.method === 'POST') {
     try {
-      const { seriesId, folder, selectedEps, fromEp, toEp, outputLabel } = await readJsonBody(req);
+      const { seriesId, folder, selectedEps, fromEp, toEp, outputLabel, compress } = await readJsonBody(req);
+      const compressFlag = Boolean(compress);
       let sid = String(seriesId || '').trim();
       let cleanTitle = '';
       let displayTitle = '';
@@ -2204,12 +3083,13 @@ const server = http.createServer(async (req, res) => {
         failed: 0,
         workers: 2,
         qualityMode: '1080p',
+        compress: compressFlag,
         downloadedBytes: 0,
         speedMb: 0,
-        speedText: 'FFmpeg Merge',
+        speedText: compressFlag ? 'FFmpeg Compress' : 'FFmpeg Merge',
         etaSec: 0,
         progress: 5,
-        message: `🎞️ កំពុងរៀបចំផ្គុំតាមលំដាប់ ${seqDesc} (${entries.length} ភាគ)...`,
+        message: `${compressFlag ? '🗜️ កំពុងរៀបចំបង្ហាប់ និងផ្គុំ' : '🎞️ កំពុងរៀបចំផ្គុំ'}តាមលំដាប់ ${seqDesc} (${entries.length} ភាគ)...`,
         startedAt: Date.now(),
         finishedAt: null,
         lastBroadcastAt: 0,
@@ -2229,12 +3109,13 @@ const server = http.createServer(async (req, res) => {
         try {
           const result = await dl.mergeEpisodesToMovie(outputDir, cleanTitle, entries, {
             outputLabel: computedLabel,
+            compress: compressFlag,
             signal: job.abortController.signal,
             activeChildren: job.activeChildren,
             onProgress: (pct, msg) => {
               job.progress = pct >= 100 ? 100 : Math.min(99, Math.max(8, Math.round(((pct - 88) / 12) * 90 + 10)));
               job.message = msg;
-              if (msg) pushJobLog(job, msg);
+              if (msg && (!compressFlag || pct <= 90 || pct >= 100)) pushJobLog(job, msg);
               emitSnapshot(job, false);
             },
           });
@@ -2338,12 +3219,12 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/open-folder') {
     let targetPath = getDownloadDir();
     try {
-      const { title, folder } = await readJsonBody(req);
+      const { title, folder, seriesId } = await readJsonBody(req);
       if (folder) {
-        const safeSub = dl.resolveSafeSubdir(targetPath, folder);
+        const safeSub = dl.resolveSafeSubdir(targetPath, folder) || dl.resolveSafeSubdir(targetPath, dl.sanitizeTitle(folder, seriesId || ''));
         if (safeSub && fs.existsSync(safeSub)) targetPath = safeSub;
       } else if (title) {
-        const cleanTitle = dl.sanitizeTitle(title);
+        const cleanTitle = dl.sanitizeTitle(title, seriesId || '');
         const dramaDir = path.join(targetPath, cleanTitle);
         if (fs.existsSync(dramaDir)) targetPath = dramaDir;
       }
@@ -2488,12 +3369,94 @@ const server = http.createServer(async (req, res) => {
     return fs.createReadStream(exePath).pipe(res);
   }
 
+  if (url.pathname === '/api/download-cover' && req.method === 'GET') {
+    const coverUrl = url.searchParams.get('url') || '';
+    const title = url.searchParams.get('title') || 'drama_cover';
+    const folder = url.searchParams.get('folder') || '';
+    const sid = url.searchParams.get('seriesId') || '';
+    try {
+      if (!coverUrl) {
+        res.writeHead(400);
+        return res.end('Missing cover url');
+      }
+      const safeTitle = dl.sanitizeTitle(title) || 'drama_cover';
+      const fileName = `${safeTitle}_cover.jpg`;
+
+      if (folder) {
+        const rootDir = getDownloadDir();
+        const sanitizedFolder = dl.sanitizeTitle(folder, sid);
+        const outDir = dl.resolveSafeSubdir(rootDir, folder) || dl.resolveSafeSubdir(rootDir, sanitizedFolder);
+        if (outDir && fs.existsSync(outDir)) {
+          dl.saveCoverImage(outDir, coverUrl).catch(() => {});
+        }
+      }
+
+      const response = await axios.get(coverUrl, {
+        responseType: 'stream',
+        timeout: 15000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          Referer: 'https://novel.snssdk.com/',
+        },
+      });
+
+      res.writeHead(200, {
+        'Content-Type': response.headers['content-type'] || 'image/jpeg',
+        'Content-Disposition': `attachment; filename="${encodeURIComponent(fileName)}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+        'Cache-Control': 'public, max-age=86400',
+      });
+      return response.data.pipe(res);
+    } catch (err) {
+      res.writeHead(500);
+      return res.end('Error downloading cover: ' + err.message);
+    }
+  }
+
+  if (url.pathname === '/api/batch-translate' && req.method === 'POST') {
+    try {
+      const { titles } = await readJsonBody(req);
+      if (!Array.isArray(titles)) {
+        return sendJson(res, { success: false, error: 'titles array required' }, 400);
+      }
+      const hasKey = Boolean(loadConfig().GEMINI_API_KEY);
+      const translations = await batchTranslateTitlesSmart(titles);
+      return sendJson(res, { success: true, hasKey, translations });
+    } catch (err) {
+      return sendJson(res, { success: false, error: err.message }, 500);
+    }
+  }
+
+  if (url.pathname === '/api/translate-title' && req.method === 'POST') {
+    try {
+      const { title, forceAI = false, seriesId = '', folder = '' } = await readJsonBody(req);
+      if (!title) return sendJson(res, { success: false, error: 'title required' }, 400);
+      const khmer = await translateDramaTitleSmart(title, { forceAI: Boolean(forceAI) });
+      if (khmer && khmer !== String(title).trim()) {
+        syncDramaTitleEverywhere(title, khmer, seriesId, folder);
+      }
+      return sendJson(res, { success: true, khmer, title, seriesId });
+    } catch (err) {
+      return sendJson(res, { success: false, error: err.message }, 500);
+    }
+  }
+
+  if (url.pathname === '/api/update-title' && req.method === 'POST') {
+    try {
+      const { title, titleKhmer, seriesId = '', folder = '' } = await readJsonBody(req);
+      if (!title || !titleKhmer) return sendJson(res, { success: false, error: 'title & titleKhmer required' }, 400);
+      const val = String(titleKhmer).trim();
+      syncDramaTitleEverywhere(title, val, seriesId, folder);
+      return sendJson(res, { success: true, titleKhmer: val });
+    } catch (err) {
+      return sendJson(res, { success: false, error: err.message }, 500);
+    }
+  }
+
   if (url.pathname === '/api/gemini-translate' && req.method === 'POST') {
     try {
-      const { title } = await readJsonBody(req);
+      const { title, forceAI = false } = await readJsonBody(req);
       if (!title) return sendJson(res, { error: 'title required' }, 400);
-      const prompt = `You are a Khmer drama translator. Translate this Chinese drama title to natural Khmer language (ភាសាខ្មែរ). Return ONLY the Khmer translation, no explanation, no Chinese characters, no romanization.\nChinese title: "${title}"\nKhmer translation:`;
-      const khmer = await callGemini(prompt);
+      const khmer = await translateDramaTitleSmart(title, { forceAI: Boolean(forceAI) });
       return sendJson(res, { khmer });
     } catch (err) {
       return sendJson(res, { error: err.message });
@@ -2540,6 +3503,12 @@ function runBackgroundWarmup() {
 }
 
 function startServer({ port = PORT, host = '127.0.0.1', warmUp = true } = {}) {
+  try {
+    const savedToken = loadConfig().DRAMABOX_VIP_TOKEN || '';
+    if (savedToken && typeof sources.setCustomDramaBoxToken === 'function') {
+      sources.setCustomDramaBoxToken(savedToken);
+    }
+  } catch (_) {}
   return new Promise((resolve, reject) => {
     if (server.listening) {
       const addr = server.address();
