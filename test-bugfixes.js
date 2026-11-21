@@ -321,3 +321,163 @@ test('upstream-watcher detects new GitHub commits/releases and formats Telegram 
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('dramawave/netshort/goodshort resolvers, AES roundtrip, and custom-cms MacCMS adapter + SSRF guard', async () => {
+  const axios = require('axios');
+  const dw = require('./lib/dramawave');
+  const ns = require('./lib/netshort');
+  const gs = require('./lib/goodshort');
+  const customCms = require('./lib/custom-cms');
+  const sources = require('./lib/sources');
+
+  // AES-128-CBC roundtrip for DramaWave payload helper
+  const key = Buffer.from('2r36789f45q01ae5', 'utf8');
+  const sampleJson = JSON.stringify({ code: 200, ok: true, list: [1, 2, 3] });
+  const encrypted = dw._aesEncrypt(sampleJson, key);
+  assert.strictEqual(dw._aesDecrypt(encrypted, key), sampleJson);
+  assert.throws(() => dw._aesDecrypt('AAAA', key), /too short/);
+
+  // Overseas ID/URL resolution and host validation
+  assert.strictEqual(dw.resolveSeriesId('https://m.mydramawave.com/series/PWXh47pph6/ep1'), 'dramawave:PWXh47pph6');
+  assert.throws(() => dw.resolveSeriesId('https://evil.example.com/series/PWXh47pph6'), /មិនមែនជា DramaWave/);
+  assert.strictEqual(ns.resolveSeriesId('https://netshort.com/episode/demo-2117444629119504385'), 'netshort:2117444629119504385');
+  assert.throws(() => ns.resolveSeriesId('https://evil.example.com/episode/2117444629119504385'), /មិនមែនជា NetShort/);
+  assert.strictEqual(gs.resolveSeriesId('https://www.goodshort.com/drama/my-drama-31001955313'), 'goodshort:31001955313');
+  assert.throws(() => gs.resolveSeriesId('https://evil.example.com/drama/31001955313'), /មិនមែនជា GoodShort/);
+
+  // Custom CMS SSRF + normalization + mocked MacCMS catalog/episodes/playUrl
+  assert.throws(() => customCms.validateSource({ name: 'Local', url: 'http://127.0.0.1/api.php/provide/vod/' }), /Public/);
+  assert.throws(() => customCms.validateSource({ name: 'LAN', url: 'http://192.168.1.10/api.php/provide/vod/' }), /Public/);
+  const validSrc = customCms.validateSource({ name: 'TestCMS', url: 'https://cms.example.com' });
+  assert.strictEqual(validSrc.url, 'https://cms.example.com/api.php/provide/vod/');
+
+  const origGet = axios.get;
+  try {
+    sources.setCustomSources([validSrc]);
+    const listedIds = sources.getSourcesList().map((s) => s.id);
+    assert.ok(listedIds.includes(`custom:${validSrc.id}`), 'custom source present in getSourcesList');
+    assert.ok(listedIds.indexOf(`custom:${validSrc.id}`) < listedIds.indexOf('social'), 'custom source ordered before social');
+    assert.strictEqual(sources.detectSourceFromId(`custom:${validSrc.id}:901`), `custom:${validSrc.id}`);
+    assert.strictEqual(sources.resolveDramaUrlOrId(`custom:${validSrc.id}:901`), `custom:${validSrc.id}:901`);
+
+    axios.get = async (reqUrl) => {
+      const u = new URL(reqUrl);
+      if (u.searchParams.get('ids') === '901') {
+        return {
+          data: JSON.stringify({
+            code: 1,
+            list: [{
+              vod_id: 901,
+              vod_name: 'Sample MacCMS Drama',
+              vod_pic: 'https://cdn.example.com/cover.jpg',
+              vod_total: 2,
+              vod_play_from: 'm3u8$$$mp4',
+              vod_play_url: '第1集$https://cdn.example.com/1.m3u8#第2集$https://cdn.example.com/2.m3u8$$$第1集$https://cdn.example.com/1.mp4',
+            }],
+          }),
+        };
+      }
+      return {
+        data: JSON.stringify({
+          code: 1,
+          pagecount: 2,
+          total: 20,
+          class: [{ type_id: 11, type_name: '短剧' }],
+          list: [{ vod_id: 901, vod_name: 'Sample MacCMS Drama', vod_pic: 'https://cdn.example.com/cover.jpg', vod_total: 2, type_name: '短剧' }],
+        }),
+      };
+    };
+
+    const testRes = await sources.testCustomSource({ name: 'TestCMS', url: validSrc.url });
+    assert.strictEqual(testRes.success, true);
+    assert.strictEqual(testRes.count, 1);
+
+    const cat = await sources.browseSourceCatalog(`custom:${validSrc.id}`, { page: 1 });
+    assert.strictEqual(cat.dramas.length, 1);
+    assert.strictEqual(cat.dramas[0].seriesId, `custom:${validSrc.id}:901`);
+    assert.strictEqual(cat.hasMore, true);
+
+    const sr = await sources.searchSource(`custom:${validSrc.id}`, 'Sample', 1);
+    assert.strictEqual(sr.length, 1);
+
+    const eps = await sources.fetchEpisodeListUnified(`custom:${validSrc.id}:901`);
+    assert.strictEqual(eps.episodes.length, 2);
+    assert.strictEqual(eps.episodes[0].vid, `custom:${validSrc.id}:901:0:0`);
+
+    const play = await sources.fetchPlayUrlUnified(eps.episodes[0].vid, eps.series_id);
+    assert.strictEqual(play.format, 'hls');
+    assert.strictEqual(play.url, 'https://cdn.example.com/1.m3u8');
+    assert.strictEqual(play.variants.length, 2, 'collects alternate line URL for fallback');
+  } finally {
+    axios.get = origGet;
+    sources.setCustomSources([]);
+  }
+});
+
+test('ui_server /api/custom-sources CRUD persists to config.json and updates /api/sources', async () => {
+  const os = require('os');
+  const http = require('http');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eza-custom-cms-'));
+  const prevCfg = process.env.HDRG_CONFIG_FILE;
+  const prevIso = process.env.HDRG_ISOLATED_CONFIG;
+  process.env.HDRG_CONFIG_FILE = path.join(tmpDir, 'config.json');
+  process.env.HDRG_ISOLATED_CONFIG = '1';
+
+  const jsonReq = (port, method, reqPath, payload = null) => new Promise((resolve, reject) => {
+    const body = payload ? JSON.stringify(payload) : null;
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port,
+      path: reqPath,
+      method,
+      headers: body ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } : {},
+    }, (res) => {
+      let data = '';
+      res.on('data', (c) => { data += c; });
+      res.on('end', () => resolve({ status: res.statusCode, json: JSON.parse(data) }));
+    });
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
+  });
+
+  let uiServer = null;
+  let started = false;
+  try {
+    delete require.cache[require.resolve('./ui_server')];
+    uiServer = require('./ui_server');
+    const info = await uiServer.startServer({ port: 0, host: '127.0.0.1', warmUp: false });
+    started = true;
+
+    const bad = await jsonReq(info.port, 'POST', '/api/custom-sources', { name: 'Bad', url: 'http://127.0.0.1/api.php/provide/vod/' });
+    assert.strictEqual(bad.status, 400);
+    assert.strictEqual(bad.json.success, false);
+
+    const added = await jsonReq(info.port, 'POST', '/api/custom-sources', { name: 'MyVod', url: 'https://vod.example.com' });
+    assert.strictEqual(added.status, 200);
+    assert.strictEqual(added.json.success, true);
+    const createdId = added.json.source.id;
+
+    const listRes = await jsonReq(info.port, 'GET', '/api/custom-sources');
+    assert.strictEqual(listRes.json.sources.length, 1);
+    assert.strictEqual(listRes.json.sources[0].url, 'https://vod.example.com/api.php/provide/vod/');
+
+    const srcRes = await jsonReq(info.port, 'GET', '/api/sources');
+    const ids = srcRes.json.sources.map((s) => s.id);
+    assert.ok(ids.includes('dramawave') && ids.includes('netshort') && ids.includes('goodshort'));
+    assert.ok(ids.includes(`custom:${createdId}`));
+
+    const savedCfg = JSON.parse(fs.readFileSync(process.env.HDRG_CONFIG_FILE, 'utf8'));
+    assert.strictEqual(savedCfg.CUSTOM_SOURCES.length, 1);
+
+    const delRes = await jsonReq(info.port, 'POST', '/api/custom-sources/delete', { id: createdId });
+    assert.strictEqual(delRes.json.success, true);
+    assert.strictEqual(delRes.json.sources.length, 0);
+  } finally {
+    try { if (started && uiServer) uiServer.stopServer(); } catch (_) {}
+    try { require('./lib/sources').setCustomSources([]); } catch (_) {}
+    if (prevCfg === undefined) delete process.env.HDRG_CONFIG_FILE; else process.env.HDRG_CONFIG_FILE = prevCfg;
+    if (prevIso === undefined) delete process.env.HDRG_ISOLATED_CONFIG; else process.env.HDRG_ISOLATED_CONFIG = prevIso;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

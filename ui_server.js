@@ -100,6 +100,8 @@ function loadConfig() {
       const parsed = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
       if (parsed.DOWNLOAD_DIR) cfg.DOWNLOAD_DIR = parsed.DOWNLOAD_DIR;
       if (parsed.GEMINI_API_KEY) cfg.GEMINI_API_KEY = parsed.GEMINI_API_KEY;
+      if (parsed.DRAMABOX_VIP_TOKEN) cfg.DRAMABOX_VIP_TOKEN = parsed.DRAMABOX_VIP_TOKEN;
+      if (Array.isArray(parsed.CUSTOM_SOURCES)) cfg.CUSTOM_SOURCES = parsed.CUSTOM_SOURCES;
     }
   } catch (_) {}
   return cfg;
@@ -2211,6 +2213,63 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (url.pathname === '/api/custom-sources' && req.method === 'GET') {
+    return sendJson(res, { success: true, sources: sources.getCustomSources() });
+  }
+
+  if (url.pathname === '/api/custom-sources' && req.method === 'POST') {
+    try {
+      const body = await readJsonBody(req);
+      const valid = sources.validateCustomSource({ name: body.name, url: body.url, enabled: body.enabled !== false });
+      const current = sources.getCustomSources();
+      if (current.length >= 20) {
+        return sendJson(res, { success: false, error: 'អាចបន្ថែមប្រភពផ្ទាល់ខ្លួនបានអតិបរមា ២០ ប៉ុណ្ណោះ' }, 400);
+      }
+      const next = [...current, valid];
+      const saved = sources.setCustomSources(next);
+      saveConfig({ CUSTOM_SOURCES: saved });
+      return sendJson(res, {
+        success: true,
+        source: valid,
+        sources: saved,
+        catalogSources: sources.getSourcesList(),
+      });
+    } catch (err) {
+      return sendJson(res, { success: false, error: err.message }, 400);
+    }
+  }
+
+  if (url.pathname === '/api/custom-sources/test' && req.method === 'POST') {
+    try {
+      const body = await readJsonBody(req);
+      const result = await sources.testCustomSource({ name: body.name || 'Custom CMS Test', url: body.url });
+      if (!result.success) return sendJson(res, result, 400);
+      return sendJson(res, result);
+    } catch (err) {
+      return sendJson(res, { success: false, error: err.message }, 400);
+    }
+  }
+
+  if (url.pathname === '/api/custom-sources/delete' && req.method === 'POST') {
+    try {
+      const body = await readJsonBody(req);
+      const rawId = String(body.id || '').trim().toLowerCase();
+      const targetId = rawId.startsWith('custom:') ? rawId.slice(7) : rawId;
+      if (!targetId) return sendJson(res, { success: false, error: 'សូមបញ្ជាក់លេខសម្គាល់ប្រភព' }, 400);
+      const current = sources.getCustomSources();
+      const next = current.filter((s) => s.id !== targetId);
+      const saved = sources.setCustomSources(next);
+      saveConfig({ CUSTOM_SOURCES: saved });
+      return sendJson(res, {
+        success: true,
+        sources: saved,
+        catalogSources: sources.getSourcesList(),
+      });
+    } catch (err) {
+      return sendJson(res, { success: false, error: err.message }, 400);
+    }
+  }
+
   if (url.pathname === '/api/sources') {
     const [ver, aria2Ver, nm3u8Ver, gpuEnc] = await Promise.all([
       ytdlp.getVersion(),
@@ -2220,7 +2279,7 @@ const server = http.createServer(async (req, res) => {
     ]);
     return sendJson(res, {
       success: true,
-      sources: sources.SOURCES,
+      sources: sources.getSourcesList(),
       ytdlp: { available: ytdlp.isAvailable(), version: ver },
       aria2c: { available: ytdlp.isAria2Available(), version: aria2Ver, rpc: dl.getAria2RpcStatus() },
       nm3u8dl: { available: ytdlp.isNm3u8dlAvailable(), version: nm3u8Ver },
@@ -3467,9 +3526,13 @@ function runBackgroundWarmup() {
 
 function startServer({ port = PORT, host = '127.0.0.1', warmUp = true } = {}) {
   try {
-    const savedToken = loadConfig().DRAMABOX_VIP_TOKEN || '';
+    const savedCfg = loadConfig();
+    const savedToken = savedCfg.DRAMABOX_VIP_TOKEN || '';
     if (savedToken && typeof sources.setCustomDramaBoxToken === 'function') {
       sources.setCustomDramaBoxToken(savedToken);
+    }
+    if (typeof sources.setCustomSources === 'function') {
+      sources.setCustomSources(savedCfg.CUSTOM_SOURCES || []);
     }
   } catch (_) {}
   return new Promise((resolve, reject) => {

@@ -1356,6 +1356,23 @@
           <div id="settingsLicExpiry" style="font-size:11.5px; color:var(--muted);"></div>
         </div>
 
+        <div id="settingsCustomCmsBox" style="padding:10px 12px; background:rgba(99,102,241,0.06); border:1px solid rgba(99,102,241,0.25); border-radius:11px; display:flex; flex-direction:column; gap:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+            <span style="font-size:12.5px; font-weight:700; color:var(--text);">🧩 ប្រភពរឿងផ្ទាល់ខ្លួន (MacCMS / AppleCMS API)</span>
+          </div>
+          <div style="font-size:11.5px; color:var(--muted);">បន្ថែមប្រភព API <code style="font-size:11px;">/api.php/provide/vod/</code> ដើម្បីស្វែងរក និងទាញយកភាគពេញ MP4/M3U8 ដោយឥតគិតថ្លៃ។</div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <input id="customCmsName" type="text" placeholder="ឈ្មោះប្រភព (ឧ. MyCMS)" maxlength="80" style="flex:1; min-width:120px; padding:7px 9px; border-radius:8px; border:1px solid var(--border); background:var(--panel-2); color:var(--text); font-size:12px;" />
+            <input id="customCmsUrl" type="url" placeholder="https://example.com/api.php/provide/vod/" style="flex:2; min-width:190px; padding:7px 9px; border-radius:8px; border:1px solid var(--border); background:var(--panel-2); color:var(--text); font-size:12px;" />
+          </div>
+          <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+            <button id="btnTestCustomCms" type="button" class="btn btn-xs">🧪 សាកល្បង API</button>
+            <button id="btnAddCustomCms" type="button" class="btn btn-primary btn-xs">➕ បន្ថែមប្រភព</button>
+            <span id="customCmsStatus" style="font-size:11.5px; color:var(--muted);"></span>
+          </div>
+          <div id="customCmsList" style="display:flex; flex-direction:column; gap:6px; max-height:140px; overflow-y:auto;"></div>
+        </div>
+
         <div id="settingsAppFooter" style="padding-top: 6px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
           <span style="font-size: 12px; color: var(--muted);">EZA PRO Downloader v1.0.0</span>
           <span style="font-size: 12px; color: var(--dim);">Powered by EZA PRO</span>
@@ -1532,6 +1549,9 @@
         { id: 'hongguo', label: '🔥 HongGuo (红果)' },
         { id: 'dramabox', label: '🎬 DramaBox' },
         { id: 'reelshort', label: '🎭 ReelShort' },
+        { id: 'dramawave', label: '🌊 DramaWave' },
+        { id: 'netshort', label: '⚡ NetShort' },
+        { id: 'goodshort', label: '✨ GoodShort' },
         { id: 'hema', label: '🦛 Hema (河马)' },
         { id: 'xifan', label: '🍱 Xifan (西饭)' },
         { id: 'social', label: '🌐 Social Video / Link' }
@@ -1829,9 +1849,11 @@
         state.mode = 'catalog';
         catalogSeq += 1;
         if ($('searchInput')) {
+          const activeSrcObj = state.sources.find((s) => s.id === state.source);
+          const srcName = activeSrcObj ? (activeSrcObj.shortLabel || activeSrcObj.label) : state.source;
           $('searchInput').placeholder = state.source === 'social'
             ? 'បិទភ្ជាប់ Link TikTok / YouTube / Douyin / Facebook...'
-            : `វាយឈ្មោះរឿង (${state.source}) ឬ បិទភ្ជាប់ Link...`;
+            : `វាយឈ្មោះរឿង (${srcName}) ឬ បិទភ្ជាប់ Link...`;
         }
         renderSources();
         syncBrowseUi();
@@ -2690,7 +2712,8 @@
               : (missing.length === freeTotal ? `⬇️ ទាញយកទាំងអស់ (${missing.length} ភាគ)` : `⬇️ ទាញយកភាគនៅសល់ (${missing.length} ភាគ)`));
 
         if ($('btnFindFullMovie')) {
-          $('btnFindFullMovie').style.display = (d && (state.lockedEps.size > 0 || d.source === 'dramabox' || d.source === 'reelshort')) ? 'inline-flex' : 'none';
+          const overseasVip = ['dramabox', 'reelshort', 'dramawave', 'netshort', 'goodshort'].includes(d && d.source);
+          $('btnFindFullMovie').style.display = (d && (state.lockedEps.size > 0 || overseasVip)) ? 'inline-flex' : 'none';
         }
         $('btnRetryFailed').style.display = (!active && failed.length > 0 && missing.length < (d ? d.total : 0)) ? 'inline-flex' : 'none';
         $('btnRetryFailed').textContent = `🔄 ទាញភាគបរាជ័យឡើងវិញ (${failed.length})`;
@@ -4392,7 +4415,90 @@
       $('btnToggleLogs').addEventListener('click', () => $('logsBox').classList.toggle('show'));
 
       document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => $(b.dataset.close).classList.remove('show')));
-      $('btnSettings').addEventListener('click', () => { $('folderInput').value = state.downloadDir || ''; $('settingsModal').classList.add('show'); });
+      async function loadCustomCmsSources() {
+        const listEl = $('customCmsList');
+        if (!listEl) return;
+        const res = await api('/api/custom-sources').catch(() => null);
+        const rows = (res && Array.isArray(res.sources)) ? res.sources : [];
+        if (!rows.length) {
+          listEl.innerHTML = '<div style="font-size:11.5px; color:var(--muted);">មិនទាន់មានប្រភពផ្ទាល់ខ្លួនទេ។</div>';
+          return;
+        }
+        listEl.innerHTML = rows.map((s) => `
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 8px; border-radius:8px; border:1px solid var(--border); background:var(--panel-2);">
+            <div style="min-width:0; flex:1;">
+              <div style="font-size:12px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">🧩 ${esc(s.name)}</div>
+              <div style="font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(s.url)}</div>
+            </div>
+            <button type="button" class="btn btn-xs" data-del-cms="${esc(s.id)}" style="color:var(--err);">🗑 លុប</button>
+          </div>
+        `).join('');
+      }
+
+      $('btnSettings').addEventListener('click', () => {
+        $('folderInput').value = state.downloadDir || '';
+        if ($('customCmsStatus')) $('customCmsStatus').textContent = '';
+        loadCustomCmsSources();
+        $('settingsModal').classList.add('show');
+      });
+
+      if ($('btnTestCustomCms')) {
+        $('btnTestCustomCms').addEventListener('click', () => safeRun(async () => {
+          const url = ($('customCmsUrl')?.value || '').trim();
+          const name = ($('customCmsName')?.value || '').trim();
+          const st = $('customCmsStatus');
+          if (!url) { toast('សូមបញ្ចូល URL របស់ប្រភព CMS', 'err'); return; }
+          if (st) { st.style.color = 'var(--muted)'; st.textContent = '⏳ កំពុងសាកល្បង...'; }
+          const r = await api('/api/custom-sources/test', { method: 'POST', body: JSON.stringify({ name, url }) });
+          if (r && r.success) {
+            if (st) { st.style.color = 'var(--ok)'; st.textContent = `✅ ដំណើរការ! រកឃើញ ${r.count || 0} រឿង / ${r.genres?.length || 0} ប្រភេទ`; }
+          } else {
+            if (st) { st.style.color = 'var(--err)'; st.textContent = `❌ ${(r && r.error) || 'សាកល្បងបរាជ័យ'}`; }
+          }
+        }));
+      }
+
+      if ($('btnAddCustomCms')) {
+        $('btnAddCustomCms').addEventListener('click', () => safeRun(async () => {
+          const name = ($('customCmsName')?.value || '').trim();
+          const url = ($('customCmsUrl')?.value || '').trim();
+          const st = $('customCmsStatus');
+          if (!name || !url) { toast('សូមបំពេញទាំងឈ្មោះ និង Link API', 'err'); return; }
+          const r = await api('/api/custom-sources', { method: 'POST', body: JSON.stringify({ name, url }) });
+          if (!r || !r.success) {
+            if (st) { st.style.color = 'var(--err)'; st.textContent = `❌ ${(r && r.error) || 'បន្ថែមបរាជ័យ'}`; }
+            toast((r && r.error) || 'បន្ថែមប្រភពបរាជ័យ', 'err');
+            return;
+          }
+          if ($('customCmsName')) $('customCmsName').value = '';
+          if ($('customCmsUrl')) $('customCmsUrl').value = '';
+          if (st) { st.style.color = 'var(--ok)'; st.textContent = '✅ បានបន្ថែមប្រភពថ្មី!'; }
+          if (Array.isArray(r.catalogSources)) {
+            state.sources = r.catalogSources;
+            renderSources();
+          }
+          await loadCustomCmsSources();
+          toast('បានបន្ថែមប្រភព CMS រួចរាល់ ✓', 'ok');
+        }));
+      }
+
+      if ($('customCmsList')) {
+        $('customCmsList').addEventListener('click', (e) => safeRun(async () => {
+          const delBtn = e.target.closest('[data-del-cms]');
+          if (!delBtn) return;
+          const id = delBtn.dataset.delCms;
+          if (!id) return;
+          const r = await api('/api/custom-sources/delete', { method: 'POST', body: JSON.stringify({ id }) });
+          if (!r || !r.success) { toast((r && r.error) || 'លុបបរាជ័យ', 'err'); return; }
+          if (Array.isArray(r.catalogSources)) {
+            state.sources = r.catalogSources;
+            if (state.source === `custom:${id}`) await switchSource('hongguo');
+            else renderSources();
+          }
+          await loadCustomCmsSources();
+          toast('បានលុបប្រភពផ្ទាល់ខ្លួន', 'ok');
+        }));
+      }
       $('btnBrowseFolder').addEventListener('click', pickSaveFolder);
       $('btnSaveSettings').addEventListener('click', () => safeRun(async () => {
         const d = $('folderInput').value.trim();
