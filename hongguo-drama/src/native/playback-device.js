@@ -113,4 +113,16 @@ function getPlaybackDevice(requestJson) {
     return registration;
 }
 
-module.exports = { getPlaybackDevice, registerPlaybackDevice };
+function refreshPlaybackDevice(requestJson, options = {}) {
+    registration = undefined;
+    retryAfter = 0;
+    registrationRetryAfter = 0;
+    registration ||= Promise.resolve().then(() => registerPlaybackDevice(requestJson, options)).catch(error => {
+        if (error.code === 'ERR_CANCELED') registration = undefined;
+        else retryAfter = Date.now() + 10000;
+        throw error;
+    });
+    return registration;
+}
+
+module.exports = { getPlaybackDevice, registerPlaybackDevice, refreshPlaybackDevice };

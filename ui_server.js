@@ -4,7 +4,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const os = require('os');
 const path = require('path');
-const { spawn, exec } = require('child_process');
+const { spawn } = require('child_process');
 
 const axios = require('axios');
 const cloudLicense = require('./lib/cloud-license');
@@ -14,11 +14,13 @@ const { readRouterData, browseList } = require('./hongguo-drama/src/native/catal
 const { listNewReleases } = require('./hongguo-drama/src/native/hongguo-app-new');
 
 const { fetchAppPlayUrl, requestJson: appRequestJson } = require('./hongguo-drama/src/native/app-source');
-const { getPlaybackDevice } = require('./hongguo-drama/src/native/playback-device');
+const { getPlaybackDevice, refreshPlaybackDevice } = require('./hongguo-drama/src/native/playback-device');
 
 const dl = require('./lib/downloader');
 const sources = require('./lib/sources');
 const ytdlp = require('./lib/ytdlp');
+const upstreamWatcher = require('./lib/upstream-watcher');
+let lastNotifiedUpstreamSig = '';
 
 const PORT = Number(process.env.HDRG_PORT || 3000);
 const IS_PACKAGED_CLIENT = process.env.EZA_PACKAGED_CLIENT === '1';
@@ -91,14 +93,13 @@ function setFolderPickerHandler(handler) {
 function loadConfig() {
   const envData = ISOLATED_CONFIG_ONLY ? {} : parseEnvFile(ENV_FILE);
   const cfg = {
-    GEMINI_API_KEY: envData.GEMINI_API_KEY || process.env.GEMINI_API_KEY || '',
     DOWNLOAD_DIR: envData.DOWNLOAD_DIR || DEFAULT_DOWNLOAD_DIR,
   };
   try {
     if (fs.existsSync(CONFIG_FILE)) {
       const parsed = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-      if (parsed.GEMINI_API_KEY) cfg.GEMINI_API_KEY = parsed.GEMINI_API_KEY;
       if (parsed.DOWNLOAD_DIR) cfg.DOWNLOAD_DIR = parsed.DOWNLOAD_DIR;
+      if (parsed.GEMINI_API_KEY) cfg.GEMINI_API_KEY = parsed.GEMINI_API_KEY;
     }
   } catch (_) {}
   return cfg;
@@ -118,20 +119,11 @@ function saveConfig(cfg) {
   const merged = { ...current, ...cfg };
   if (!ISOLATED_CONFIG_ONLY) {
     saveEnvFile(ENV_FILE, {
-      GEMINI_API_KEY: merged.GEMINI_API_KEY || '',
       DOWNLOAD_DIR: merged.DOWNLOAD_DIR || DEFAULT_DOWNLOAD_DIR,
     });
   }
   fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(merged, null, 2), 'utf8');
-  if (!ISOLATED_CONFIG_ONLY) {
-    try {
-      const ezargDir = 'D:\\EZARG';
-      if (fs.existsSync(ezargDir)) {
-        fs.writeFileSync(path.join(ezargDir, 'config.json'), JSON.stringify(merged, null, 2), 'utf8');
-      }
-    } catch (_) {}
-  }
 }
 
 async function promptFolderPicker(initialPath = DEFAULT_DOWNLOAD_DIR) {
@@ -468,16 +460,6 @@ async function refreshTrendingDramas() {
     cachedTrendingDramas = allDramas;
     nextRefreshTimestamp = Date.now() + 10 * 60 * 1000;
     console.log(`[Trending] ទទួលបានរឿងភាគចំនួន ${cachedTrendingDramas.length} រឿង (ថ្មីៗលើគេ: ${orderedNew.length})!`);
-    if (loadConfig().GEMINI_API_KEY) {
-      const untranslated = allDramas.slice(0, 30).map(d => d.title).filter(t => !translationsCache.has(t));
-      if (untranslated.length > 0) {
-        batchTranslateTitlesSmart(untranslated).then((trans) => {
-          for (const d of cachedTrendingDramas) {
-            if (trans[d.title]) d.titleKhmer = trans[d.title];
-          }
-        }).catch(() => {});
-      }
-    }
   }
 }
 
@@ -947,12 +929,6 @@ async function smartResolve(input, preferredSource = 'hongguo', cookiesFromBrows
     }
     if (khmerHit.chineseCandidates.length > 0) {
       searchQuery = khmerHit.chineseCandidates[0];
-    } else if (loadConfig().GEMINI_API_KEY) {
-      try {
-        const kwPrompt = `Convert this Khmer short-drama search query into 1 concise Chinese (Simplified) search keyword or title (2-6 Chinese characters only, no quotes or punctuation): "${str}"`;
-        const cnKw = (await callGemini(kwPrompt, { temperature: 0.1, maxOutputTokens: 32 }) || '').replace(/[^\u4e00-\u9fffA-Za-z0-9]/g, '').trim();
-        if (cnKw) searchQuery = cnKw;
-      } catch (_) {}
     }
   }
 
@@ -1298,6 +1274,13 @@ function getJobsSummary() {
 function getPrimaryJobSnapshot() {
   const all = getAllJobSnapshots();
   return all.length ? all[0] : { active: false, status: 'idle' };
+}
+
+let lastAssignedJobId = 0;
+function nextJobId() {
+  const candidate = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+  lastAssignedJobId = Math.max(lastAssignedJobId + 1, candidate);
+  return lastAssignedJobId;
 }
 
 function trimFinishedJobs() {
@@ -1717,7 +1700,7 @@ async function runBatchDownload(job) {
         emitSnapshot(job, true);
       } catch (err) {
         if (job.cancelled || signal.aborted || err.message === 'CANCELLED') return;
-        const errMsg = dl.translateNativeErrorToKhmer(err.message || 'Unknown error').slice(0, 140);
+        const errMsg = dl.translateNativeErrorToKhmer(err.message || 'Unknown error').slice(0, 180);
         failedMap.set(epNum, errMsg);
         job.episodeStates[epNum] = { status: 'error', percent: 0, error: errMsg, text: '❌ បរាជ័យ' };
         pushJobLog(job, `❌ ភាគ ${epNum}${isRetryPass ? ' (Retry)' : ''}: ${errMsg}`);
@@ -1761,7 +1744,10 @@ async function runBatchDownload(job) {
 
     // PASS 2: Automatic gentle recovery pass for any non-VIP failed episodes
     const retryNumsAll = [...failedMap.entries()]
-      .filter(([, errMsg]) => !String(errMsg || '').includes('ជាប់សោ VIP'))
+      .filter(([, errMsg]) => {
+        const msg = String(errMsg || '');
+        return !msg.includes('ជាប់សោ VIP') && !msg.includes('EMPTY_RESPONSE') && !msg.includes('HTTP 200 Empty') && !msg.includes('ឆ្លើយតបទទេ') && !msg.includes('ByteDance WAF');
+      })
       .map(([ep]) => ep)
       .sort((a, b) => a - b);
     if (retryNumsAll.length > 0) {
@@ -1975,28 +1961,11 @@ async function translateDramaTitleSmart(title, { forceAI = false } = {}) {
   const clean = String(title || '').trim();
   if (!clean) return '';
 
-  if (!forceAI && translationsCache.has(clean)) {
+  if (translationsCache.has(clean)) {
     const cached = translationsCache.get(clean);
     if (cached && isCleanKhmerTranslation(clean, cached)) return cached;
   }
 
-  // 1. Try Gemini AI with grammatical Khmer localization prompt
-  try {
-    const prompt = buildKhmerDramaPrompt(clean, false);
-    const khmer = await callGemini(prompt, {
-      temperature: 0.2,
-      maxOutputTokens: 512,
-      validate: (txt) => isCleanKhmerTranslation(clean, txt),
-    });
-    const cleanKhmer = (khmer || '').replace(/^["'«“\s]+|["'»”\s]+$/g, '').trim();
-    if (isCleanKhmerTranslation(clean, cleanKhmer)) {
-      translationsCache.set(clean, cleanKhmer);
-      saveTranslationsCache();
-      return cleanKhmer;
-    }
-  } catch (_) {}
-
-  // 2. Fallback to dictionary
   const fallback = getKhmerTitle(clean);
   if (fallback) {
     translationsCache.set(clean, fallback);
@@ -2010,83 +1979,12 @@ async function translateDramaTitleSmart(title, { forceAI = false } = {}) {
 async function batchTranslateTitlesSmart(titles = []) {
   if (!Array.isArray(titles) || titles.length === 0) return {};
   const result = {};
-  const toTranslate = [];
-  const seenToTranslate = new Set();
-
   for (const t of titles) {
     const clean = String(t || '').trim();
     if (!clean) continue;
-    const cached = translationsCache.get(clean);
-    if (cached && isCleanKhmerTranslation(clean, cached)) {
-      result[clean] = cached;
-    } else if (!seenToTranslate.has(clean)) {
-      seenToTranslate.add(clean);
-      toTranslate.push(clean);
-    }
+    const cached = translationsCache.get(clean) || getKhmerTitle(clean);
+    if (cached) result[clean] = cached;
   }
-
-  if (toTranslate.length === 0) return result;
-  if (!loadConfig().GEMINI_API_KEY) {
-    for (const orig of toTranslate) {
-      const fallback = getKhmerTitle(orig);
-      if (fallback) result[orig] = fallback;
-    }
-    return result;
-  }
-
-  // Process in chunks of up to 12 titles with generous token limit so nothing gets cut off
-  const chunks = [];
-  for (let i = 0; i < toTranslate.length; i += 12) {
-    chunks.push(toTranslate.slice(i, i + 12));
-  }
-
-  async function translateFallbackSingles(items) {
-    for (const orig of items) {
-      try {
-        const single = await translateDramaTitleSmart(orig, { forceAI: true });
-        if (single && isCleanKhmerTranslation(orig, single)) result[orig] = single;
-      } catch (_) {}
-    }
-  }
-
-  for (const chunk of chunks) {
-    try {
-      const prompt = buildKhmerDramaPrompt(chunk, true);
-      const raw = await callGemini(prompt, { temperature: 0.2, maxOutputTokens: 2048 });
-      let list = null;
-      try {
-        const cleaned = (raw || '').replace(/```(?:json)?|```/g, '').trim();
-        list = JSON.parse(cleaned);
-      } catch (_) {
-        const lines = (raw || '').split('\n').map(l => l.replace(/^[\s\d\-•*."']+|[",\s]+$/g, '').trim()).filter(Boolean);
-        if (lines.length === chunk.length) list = lines;
-      }
-
-      if (Array.isArray(list) && list.length === chunk.length) {
-        const missed = [];
-        chunk.forEach((orig, idx) => {
-          const kh = String(list[idx] || '').replace(/^["'«“\s]+|["'»”\s]+$/g, '').trim();
-          if (isCleanKhmerTranslation(orig, kh)) {
-            translationsCache.set(orig, kh);
-            result[orig] = kh;
-          } else {
-            missed.push(orig);
-          }
-        });
-        saveTranslationsCache();
-        if (missed.length) await translateFallbackSingles(missed);
-      } else {
-        await translateFallbackSingles(chunk);
-      }
-    } catch (err) {
-      const msg = String(err?.message || '');
-      if (msg.includes('API_KEY_INVALID') || msg.includes('API key not valid') || msg.includes('មិនទាន់ដាក់ Gemini API Key')) {
-        break;
-      }
-      await translateFallbackSingles(chunk);
-    }
-  }
-
   return result;
 }
 
@@ -2258,17 +2156,14 @@ const server = http.createServer(async (req, res) => {
 
   // Config API
   if (url.pathname === '/api/config' && req.method === 'GET') {
-    const cfg = loadConfig();
-    const key = cfg.GEMINI_API_KEY || '';
-    const masked = key ? key.slice(0, 6) + '...' + key.slice(-4) : '';
-    return sendJson(res, { hasKey: Boolean(key), maskedKey: masked });
+    return sendJson(res, { hasKey: false, maskedKey: '' });
   }
 
   if (url.pathname === '/api/config' && req.method === 'POST') {
     try {
-      const { apiKey } = await readJsonBody(req);
+      const body = await readJsonBody(req);
       const cfg = loadConfig();
-      cfg.GEMINI_API_KEY = (apiKey || '').trim();
+      if (body.apiKey !== undefined) cfg.GEMINI_API_KEY = (body.apiKey || '').trim();
       saveConfig(cfg);
       return sendJson(res, { success: true, hasKey: Boolean(cfg.GEMINI_API_KEY) });
     } catch (err) {
@@ -2277,15 +2172,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === '/api/test-gemini' && req.method === 'POST') {
-    try {
-      const { apiKey } = await readJsonBody(req);
-      const key = (apiKey || loadConfig().GEMINI_API_KEY || '').trim();
-      if (!key) throw new Error('សូមបញ្ចូល API Key ជាមុនសិន!');
-      const text = await testGeminiKey(key);
-      return sendJson(res, { success: true, message: `Key ដំណើរការល្អ! (តេស្ត: ${text})` });
-    } catch (err) {
-      return sendJson(res, { success: false, error: 'Key មិនត្រឹមត្រូវ: ' + err.message });
-    }
+    return sendJson(res, { success: false, error: 'Gemini translation is disabled' });
   }
 
   if (url.pathname === '/api/dramabox-token' && req.method === 'GET') {
@@ -2352,10 +2239,7 @@ const server = http.createServer(async (req, res) => {
       // 1. Re-register fresh HongGuo playback identity
       let deviceOk = false;
       try {
-        const prev = await getPlaybackDevice(appRequestJson).catch(() => null);
-        const fresh = prev
-          ? await getPlaybackDevice(appRequestJson, prev)
-          : await dl.registerPlaybackDevice(appRequestJson);
+        const fresh = await refreshPlaybackDevice(appRequestJson);
         deviceOk = Boolean(fresh && fresh.device_id);
         steps.push(deviceOk ? '✅ ភ្ជាប់ប្រព័ន្ធ HongGuo v5 ថ្មីរួចរាល់' : '⚠️ មិនអាចចុះឈ្មោះ Device ថ្មីបានទេ');
       } catch (e) {
@@ -2388,6 +2272,30 @@ const server = http.createServer(async (req, res) => {
       });
     } catch (err) {
       return sendJson(res, { success: false, error: dl.translateNativeErrorToKhmer(err.message) }, 500);
+    }
+  }
+
+  if (url.pathname === '/api/upstream-status' && req.method === 'GET') {
+    try {
+      const force = url.searchParams.get('refresh') === '1';
+      const report = await upstreamWatcher.checkAllUpstreams({ force });
+      if (!IS_PACKAGED_CLIENT && report.hasUpdates) {
+        const sig = upstreamWatcher.buildUpdateSignature(report);
+        if (sig && sig !== lastNotifiedUpstreamSig) {
+          const tgCfg = upstreamWatcher.loadTelegramConfigFromEnvFile();
+          if (tgCfg.botToken && tgCfg.chatId) {
+            lastNotifiedUpstreamSig = sig;
+            upstreamWatcher.sendTelegramAlert({
+              botToken: tgCfg.botToken,
+              chatId: tgCfg.chatId,
+              message: upstreamWatcher.formatTelegramMessage(report, 'koeurnDev/RG'),
+            }).catch(() => {});
+          }
+        }
+      }
+      return sendJson(res, { success: true, ...report });
+    } catch (err) {
+      return sendJson(res, { success: false, hasUpdates: false, error: err.message }, 500);
     }
   }
 
@@ -2498,12 +2406,7 @@ const server = http.createServer(async (req, res) => {
       const lockedEps = Array.isArray(info.episodes)
         ? info.episodes.filter((e) => e.locked).map((e) => Number(e.vid_index))
         : [];
-      let titleKhmer = getKhmerTitle(info.series_title);
-      if ((!titleKhmer || titleKhmer === info.series_title) && loadConfig().GEMINI_API_KEY) {
-        try {
-          titleKhmer = await translateDramaTitleSmart(info.series_title);
-        } catch (_) {}
-      }
+      const titleKhmer = getKhmerTitle(info.series_title);
       const instantRel = getInstantRelatedDramasSync(info.series_title, String(info.series_id || sid), info.source || sources.detectSourceFromId(sid));
       const hiResDisplayCover = dl.upgradeCoverUrlToHighRes(info.cover || '', { forDisplay: true }) || info.cover || '';
       if (info.cover && fs.existsSync(outputDir)) {
@@ -2539,23 +2442,38 @@ const server = http.createServer(async (req, res) => {
     const sid = url.searchParams.get('seriesId') || '';
     const coverParam = url.searchParams.get('cover') || '';
     const titleParam = url.searchParams.get('title') || '';
+    const folderParam = url.searchParams.get('folder') || '';
+    let tempCoverDir = null;
     try {
       let rawCover = coverParam;
       let rawTitle = titleParam;
-      if (sid && (!rawCover || !rawTitle)) {
+      let canonicalTitle = folderParam;
+      if (sid && (!rawCover || !rawTitle || !canonicalTitle)) {
         const info = await fetchEpisodeListSafe(sid).catch(() => null);
         if (info) {
           rawCover = rawCover || info.cover || '';
           rawTitle = rawTitle || info.series_title || '';
+          canonicalTitle = canonicalTitle || info.series_title || '';
         }
       }
       if (!rawCover) {
         res.writeHead(404);
         return res.end('Cover not found');
       }
-      const cleanTitle = dl.sanitizeTitle(rawTitle || 'Drama', sid || 'cover');
-      const outputDir = path.join(getDownloadDir(), cleanTitle);
-      const savedPath = await dl.saveCoverImage(outputDir, rawCover, { force: true });
+      const rootDir = getDownloadDir();
+      const folderCandidates = [
+        folderParam && dl.resolveSafeSubdir(rootDir, folderParam),
+        folderParam && dl.resolveSafeSubdir(rootDir, dl.sanitizeTitle(folderParam, sid || 'cover')),
+        canonicalTitle && dl.resolveSafeSubdir(rootDir, dl.sanitizeTitle(canonicalTitle, sid || 'cover')),
+      ].filter(Boolean);
+      const existingDir = folderCandidates.find((dir) => fs.existsSync(dir)) || null;
+      const cleanTitle = dl.sanitizeTitle(rawTitle || canonicalTitle || 'Drama', sid || 'cover');
+      let targetDir = existingDir;
+      if (!targetDir) {
+        tempCoverDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eza-cover-'));
+        targetDir = tempCoverDir;
+      }
+      const savedPath = await dl.saveCoverImage(targetDir, rawCover, { force: true });
       if (!savedPath || !fs.existsSync(savedPath)) {
         res.writeHead(502);
         return res.end('Failed to download HD cover');
@@ -2571,6 +2489,10 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       res.writeHead(500);
       return res.end(err.message);
+    } finally {
+      if (tempCoverDir) {
+        try { fs.rmSync(tempCoverDir, { recursive: true, force: true }); } catch (_) {}
+      }
     }
   }
 
@@ -2741,9 +2663,10 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/ytdlp-download' && req.method === 'POST') {
     try {
       const {
-        url: targetUrl, title, cover, platform, qualityPreset,
+        url: rawTargetUrl, title, cover, platform, qualityPreset,
         cookiesFromBrowser, useAria2 = true, isPlaylist, selectedIndices, totalItems,
       } = await readJsonBody(req);
+      const targetUrl = ytdlp.extractFirstHttpUrl(rawTargetUrl) || String(rawTargetUrl || '').trim();
       if (!ytdlp.isSocialVideoUrl(targetUrl)) {
         return sendJson(res, { success: false, error: 'សូមបញ្ចូល URL វីដេអូត្រឹមត្រូវ!' }, 400);
       }
@@ -2764,7 +2687,7 @@ const server = http.createServer(async (req, res) => {
         : 1;
 
       const job = {
-        id: Date.now() * 1000 + Math.floor(Math.random() * 1000),
+        id: nextJobId(),
         mode: 'ytdlp',
         status: 'starting',
         seriesId: sid,
@@ -2901,7 +2824,7 @@ const server = http.createServer(async (req, res) => {
       // Only replace/guard if THIS SAME seriesId already has an active job (other dramas stay running!)
       const existingSame = findActiveJob(seriesId);
       if (existingSame) {
-        if (existingSame.mode === 'merge') {
+        if (existingSame.mode === 'merge' || existingSame.status === 'merging') {
           return sendJson(res, { success: false, error: 'រឿងនេះកំពុងផ្គុំ Full Movie — សូមរង់ចាំបន្តិច!' }, 409);
         }
         cancelJob(existingSame, '🔄 ចាប់ផ្ដើមការងារទាញយកថ្មីសម្រាប់រឿងនេះ...');
@@ -2915,7 +2838,7 @@ const server = http.createServer(async (req, res) => {
       const estTotal = isAllMode ? (Number(total || metaHint.total || 0)) : selectedEps.length;
 
       const job = {
-        id: Date.now() * 1000 + Math.floor(Math.random() * 1000),
+        id: nextJobId(),
         mode: 'download',
         status: 'starting',
         seriesId: String(seriesId),
@@ -3069,7 +2992,7 @@ const server = http.createServer(async (req, res) => {
 
       const seqDesc = `EP${firstEp} → EP${lastEp}`;
       const job = {
-        id: Date.now() * 1000 + Math.floor(Math.random() * 1000),
+        id: nextJobId(),
         mode: 'merge',
         status: 'merging',
         seriesId: sid,
@@ -3119,6 +3042,7 @@ const server = http.createServer(async (req, res) => {
               emitSnapshot(job, false);
             },
           });
+          if (job.cancelled || job.abortController.signal.aborted) return;
           job.status = 'done';
           job.progress = 100;
           job.finishedAt = Date.now();
@@ -3190,24 +3114,58 @@ const server = http.createServer(async (req, res) => {
         : 'video/mp4';
       const stat = fs.statSync(filePath);
       const range = req.headers.range;
-      if (range) {
-        const [startStr, endStr] = range.replace(/bytes=/, '').split('-');
-        const start = parseInt(startStr, 10) || 0;
-        const end = endStr ? parseInt(endStr, 10) : stat.size - 1;
+      const pipeMediaStream = (stream) => {
+        res.on('close', () => {
+          try { stream.destroy(); } catch (_) {}
+        });
+        stream.on('error', () => {
+          if (!res.headersSent) {
+            res.writeHead(500);
+            res.end('Stream read error');
+          } else {
+            res.destroy();
+          }
+        });
+        stream.pipe(res);
+      };
+      if (range && stat.size > 0) {
+        const m = /^bytes=(\d*)-(\d*)$/i.exec(String(range).trim());
+        if (!m || (!m[1] && !m[2])) {
+          res.writeHead(416, { 'Content-Range': `bytes */${stat.size}` });
+          return res.end();
+        }
+        let start;
+        let end;
+        if (m[1] === '') {
+          const suffixLen = Number(m[2]);
+          if (!Number.isFinite(suffixLen) || suffixLen <= 0) {
+            res.writeHead(416, { 'Content-Range': `bytes */${stat.size}` });
+            return res.end();
+          }
+          start = Math.max(0, stat.size - suffixLen);
+          end = stat.size - 1;
+        } else {
+          start = Number(m[1]);
+          end = m[2] !== '' ? Math.min(Number(m[2]), stat.size - 1) : stat.size - 1;
+        }
+        if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start >= stat.size || end < start) {
+          res.writeHead(416, { 'Content-Range': `bytes */${stat.size}` });
+          return res.end();
+        }
         res.writeHead(206, {
           'Content-Range': `bytes ${start}-${end}/${stat.size}`,
           'Accept-Ranges': 'bytes',
           'Content-Length': (end - start) + 1,
           'Content-Type': mimeType,
         });
-        fs.createReadStream(filePath, { start, end }).pipe(res);
+        pipeMediaStream(fs.createReadStream(filePath, { start, end }));
       } else {
         res.writeHead(200, {
           'Content-Length': stat.size,
           'Content-Type': mimeType,
           'Accept-Ranges': 'bytes',
         });
-        fs.createReadStream(filePath).pipe(res);
+        pipeMediaStream(fs.createReadStream(filePath));
       }
       return;
     } catch (err) {
@@ -3231,10 +3189,21 @@ const server = http.createServer(async (req, res) => {
     } catch (_) {}
     try {
       if (!fs.existsSync(targetPath)) fs.mkdirSync(targetPath, { recursive: true });
-      const p = spawn('explorer.exe', [targetPath], { detached: true, stdio: 'ignore' });
-      p.unref();
+      if (process.platform === 'win32') {
+        const p = spawn('explorer.exe', [targetPath], { detached: true, stdio: 'ignore' });
+        p.unref();
+      } else {
+        const opener = process.platform === 'darwin' ? 'open' : 'xdg-open';
+        const p = spawn(opener, [targetPath], { detached: true, stdio: 'ignore' });
+        p.unref();
+      }
     } catch (_) {
-      try { exec(`start "" "${targetPath}"`); } catch (_) {}
+      try {
+        if (process.platform === 'win32') {
+          const p = spawn('cmd.exe', ['/c', 'start', '', targetPath], { detached: true, stdio: 'ignore', windowsHide: true });
+          p.unref();
+        }
+      } catch (_) {}
     }
     return sendJson(res, { success: true, path: targetPath });
   }
@@ -3366,7 +3335,12 @@ const server = http.createServer(async (req, res) => {
       'Content-Length': stat.size,
       'Cache-Control': 'no-cache',
     });
-    return fs.createReadStream(exePath).pipe(res);
+    const exeStream = fs.createReadStream(exePath);
+    res.on('close', () => { try { exeStream.destroy(); } catch (_) {} });
+    exeStream.on('error', () => {
+      if (!res.headersSent) { res.writeHead(500); res.end('Read error'); } else res.destroy();
+    });
+    return exeStream.pipe(res);
   }
 
   if (url.pathname === '/api/download-cover' && req.method === 'GET') {
@@ -3404,6 +3378,10 @@ const server = http.createServer(async (req, res) => {
         'Content-Type': response.headers['content-type'] || 'image/jpeg',
         'Content-Disposition': `attachment; filename="${encodeURIComponent(fileName)}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
         'Cache-Control': 'public, max-age=86400',
+      });
+      res.on('close', () => { try { response.data.destroy(); } catch (_) {} });
+      response.data.on('error', () => {
+        if (!res.headersSent) { res.writeHead(502); res.end('Upstream cover error'); } else res.destroy();
       });
       return response.data.pipe(res);
     } catch (err) {
@@ -3453,26 +3431,11 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === '/api/gemini-translate' && req.method === 'POST') {
-    try {
-      const { title, forceAI = false } = await readJsonBody(req);
-      if (!title) return sendJson(res, { error: 'title required' }, 400);
-      const khmer = await translateDramaTitleSmart(title, { forceAI: Boolean(forceAI) });
-      return sendJson(res, { khmer });
-    } catch (err) {
-      return sendJson(res, { error: err.message });
-    }
+    return sendJson(res, { error: 'Gemini translation is disabled' });
   }
 
   if (url.pathname === '/api/gemini-synopsis' && req.method === 'POST') {
-    try {
-      const { title } = await readJsonBody(req);
-      if (!title) return sendJson(res, { error: 'title required' }, 400);
-      const prompt = `You are a Khmer drama expert. Based on this Chinese drama title, write a short 2-3 sentence synopsis in natural Khmer language (ភាសាខ្មែរ). Return ONLY Khmer text.\nDrama title: "${title}"\nKhmer synopsis:`;
-      const synopsis = await callGemini(prompt);
-      return sendJson(res, { synopsis });
-    } catch (err) {
-      return sendJson(res, { error: err.message });
-    }
+    return sendJson(res, { error: 'Gemini synopsis is disabled' });
   }
 
   res.writeHead(404);

@@ -139,10 +139,10 @@ if (hasSingleInstanceLock) {
   });
 
   app.on('window-all-closed', () => {
-    if (serverHandle && typeof serverHandle.stopServer === 'function') {
-      serverHandle.stopServer();
-    }
     if (process.platform !== 'darwin') {
+      if (serverHandle && typeof serverHandle.stopServer === 'function') {
+        serverHandle.stopServer();
+      }
       app.quit();
     }
   });

@@ -1095,7 +1095,6 @@
               <div id="heroOriginalTitle" style="font-size: 13px; color: var(--muted); margin-top: 3px;"></div>
             </div>
             <div style="display: flex; gap: 6px; align-items: center; flex-shrink: 0;">
-              <button id="btnAITranslate" class="btn btn-xs btn-amber" title="បកប្រែចំណងជើងជាភាសាខ្មែរដោយ AI ឱ្យកាន់តែត្រូវអត្ថន័យ">✨ AI បកប្រែ</button>
               <button id="btnEditTitle" class="btn btn-xs" title="កែសម្រួលចំណងជើងខ្មែរ">✏️ កែឈ្មោះ</button>
             </div>
           </div>
@@ -1329,30 +1328,17 @@
           ផ្គុំរឿងពេញដោយស្វ័យប្រវត្តិក្រោយទាញចប់
         </label>
 
-        <div class="field">
-          <label>✨ Gemini API Key <span id="geminiHint" style="font-weight: 400;"></span></label>
-          <input
-            id="geminiInput"
-            class="masked-input"
-            type="text"
-            name="gemini_api_key_token"
-            placeholder="AIzaSy... (មិនបាច់បំពេញបើមិនប្តូរ)"
-            autocomplete="new-password"
-            spellcheck="false"
-            data-lpignore="true"
-            data-form-type="other"
-          />
-        </div>
-
         <div style="padding:10px 12px; background:rgba(56,189,248,0.07); border:1px solid rgba(56,189,248,0.28); border-radius:11px; display:flex; flex-direction:column; gap:8px;">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
             <span style="font-size:12.5px; font-weight:700; color:#7dd3fc;">🛠️ ជួសជុល &amp; អាប់ដេតប្រព័ន្ធទាញយក</span>
             <div style="display:flex; gap:6px; flex-wrap:wrap;">
               <button id="btnRepairEngine" type="button" class="btn btn-xs">🔧 ជួសជុលការភ្ជាប់ Server</button>
               <button id="btnUpdateYtdlp" type="button" class="btn btn-xs btn-amber">⬆️ អាប់ដេត yt-dlp</button>
+              <button id="btnCheckUpstream" type="button" class="btn btn-xs">🔍 ឆែក GitHub Update</button>
             </div>
           </div>
           <div id="repairEngineStatus" style="font-size:11.5px; color:var(--muted);">ប្រើនៅពេលទាញវីដេអូយឺត ឬលោត Error ពី Server ដើម</div>
+          <div id="upstreamCheckStatus" style="display:none; font-size:11.5px; color:var(--muted); line-height:1.45; border-top:1px dashed rgba(56,189,248,0.22); padding-top:6px;"></div>
         </div>
 
         <div id="settingsLicenseBox" style="display:none; padding:10px 12px; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.32); border-radius:11px; flex-direction:column; gap:6px;">
@@ -1558,6 +1544,8 @@
         categories: HONGGUO_CATEGORIES,
         category: 'trending',
         page: 1,
+        hasMore: true,
+        isPackagedClient: false,
         dramas: [],
         matches: [],
         searchQuery: '',
@@ -1837,6 +1825,7 @@
       async function switchSource(srcId) {
         state.source = srcId || 'hongguo';
         state.page = 1;
+        state.hasMore = true;
         state.mode = 'catalog';
         catalogSeq += 1;
         if ($('searchInput')) {
@@ -1998,6 +1987,7 @@
             toast(data.error, 'warn');
           }
           const list = Array.isArray(data.dramas) ? data.dramas : [];
+          state.hasMore = typeof data.hasMore === 'boolean' ? data.hasMore : list.length > 0;
           if (append) {
             const seen = new Set(state.dramas.map((d) => String(d.id)));
             for (const x of list) if (!seen.has(String(x.id))) state.dramas.push(x);
@@ -2009,8 +1999,8 @@
           if (reqSeq === catalogSeq) toast(err.message, 'err');
         } finally {
           if (reqSeq === catalogSeq) {
-            $('btnLoadMore').disabled = false;
-            $('btnLoadMore').textContent = 'មើលរឿងបន្ថែមទៀត';
+            $('btnLoadMore').disabled = !state.hasMore;
+            $('btnLoadMore').textContent = state.hasMore ? 'មើលរឿងបន្ថែមទៀត' : 'បង្ហាញអស់រឿងហើយ ✓';
           }
         }
       }
@@ -2721,7 +2711,7 @@
           $('progBox').classList.remove('show');
           return;
         }
-        const isMerge = snap.mode === 'merge' || snap.speedText === 'FFmpeg Merge';
+        const isMerge = snap.mode === 'merge' || snap.status === 'merging' || snap.speedText === 'FFmpeg Merge' || snap.speedText === 'FFmpeg Compress';
         $('progBox').classList.add('show');
         $('progTitle').textContent = snap.message || 'កំពុងដំណើរការ...';
         const pct = Math.max(0, Math.min(100, Number(snap.progress || 0)));
@@ -3626,6 +3616,9 @@
           }
         }).catch(() => {});
         await Promise.all([loadConfig(), loadCatalog(false), loadLibrary(true)]);
+        if (!state.isPackagedClient) {
+          checkUpstreamStatus(false, false).catch(() => {});
+        }
         try {
           const st = await api('/api/download-status');
           if (st && Array.isArray(st.jobs)) {
@@ -3678,12 +3671,11 @@
           if ($('chkCompressMerge')) $('chkCompressMerge').checked = getPref('eza_compressMerge') === '1';
           syncMultiSelectUi();
           const savedQual = getPref('eza_quality', 'hdrg_quality');
-          if (savedQual === 'fast' || savedQual === '1080p') $('qualitySelect').value = savedQual;
+          if (savedQual === 'fast' || savedQual === '1080p' || savedQual === '720p') $('qualitySelect').value = savedQual;
           const savedWorkers = getPref('eza_workers', 'hdrg_workers');
           if (savedWorkers && ['6', '8', '12', '16'].includes(savedWorkers)) $('workersSelect').value = savedWorkers;
 
-          const [cfg, dir] = await Promise.all([api('/api/config'), api('/api/download-dir')]);
-          $('geminiHint').textContent = cfg.hasKey ? `(${cfg.maskedKey})` : '(មិនទាន់មាន)';
+          const [, dir] = await Promise.all([api('/api/config'), api('/api/download-dir')]);
           if (dir && dir.path) {
             state.downloadDir = dir.path;
             $('folderInput').value = dir.path;
@@ -3776,6 +3768,7 @@
         try {
           const stRes = await fetch('/api/license/status');
           const stData = await stRes.json().catch(() => ({}));
+          state.isPackagedClient = Boolean(stData.isPackagedClient);
           licenseStatusState.enforced = Boolean(stData.cloudLicenseEnforced);
           licenseStatusState.machineId = stData.machineId || '';
           if ($('gateMachineIdText') && stData.machineId) {
@@ -3924,7 +3917,7 @@
             toast('រឿងនេះមិនមានរូបក្របទេ', 'warn');
             return;
           }
-          const url = `/api/cover-hd?seriesId=${encodeURIComponent(d.seriesId || '')}&cover=${encodeURIComponent(d.cover || '')}&title=${encodeURIComponent(d.titleKhmer || d.title || 'Drama')}`;
+          const url = `/api/cover-hd?seriesId=${encodeURIComponent(d.seriesId || '')}&cover=${encodeURIComponent(d.cover || '')}&title=${encodeURIComponent(d.titleKhmer || d.title || 'Drama')}&folder=${encodeURIComponent(d.title || '')}`;
           const a = document.createElement('a');
           a.href = url;
           a.download = `${d.titleKhmer || d.title || 'Drama'} - Cover HD.jpg`;
@@ -4152,37 +4145,6 @@
         document.body.removeChild(a);
       });
 
-      $('btnAITranslate').addEventListener('click', () => safeRun(async () => {
-        const d = state.currentDrama;
-        if (!d || !d.title) return;
-        const btn = $('btnAITranslate');
-        btn.disabled = true;
-        btn.textContent = '✨ កំពុងបកប្រែ...';
-        try {
-          translateFailCounts.delete(d.title);
-          const res = await api('/api/translate-title', {
-            method: 'POST',
-            body: JSON.stringify({
-              title: d.title,
-              seriesId: d.seriesId,
-              forceAI: true
-            })
-          });
-          if (res && res.success && res.khmer && res.khmer !== d.title) {
-            syncClientDramaKhmerTitle(d.seriesId, d.title, res.khmer);
-            renderHero();
-            toast(`✨ បានបកប្រែជា៖ "${res.khmer}"`, 'ok');
-          } else {
-            toast(res?.error || 'មិនអាចបកប្រែបានទេ (សូមពិនិត្យ Gemini API Key)', 'warn');
-          }
-        } catch (err) {
-          toast(err.message || 'បញ្ហាតភ្ជាប់', 'err');
-        } finally {
-          btn.disabled = false;
-          btn.textContent = '✨ AI បកប្រែ';
-        }
-      }));
-
       $('btnEditTitle').addEventListener('click', () => safeRun(async () => {
         const d = state.currentDrama;
         if (!d || !d.title) return;
@@ -4250,6 +4212,71 @@
             const msg = (r && r.message) || '✅ អាប់ដេតរួចរាល់!';
             if (stEl) stEl.textContent = msg;
             toast(msg, r && r.success ? 'ok' : 'warn');
+          } finally {
+            btn.disabled = false;
+          }
+        }));
+      }
+      function renderUpstreamReport(report) {
+        const el = $('upstreamCheckStatus');
+        const settingsBtn = $('btnSettings');
+        if (!el || !report) return;
+        const safeGhUrl = (u) => (typeof u === 'string' && u.startsWith('https://github.com/')) ? u : '';
+        if (report.hasUpdates) {
+          const items = (report.repos || []).filter((r) => r.hasUpdate).map((r) => {
+            const parts = [];
+            if (r.hasNewRelease) {
+              const relUrl = safeGhUrl(r.latestReleaseUrl);
+              const tag = esc(r.latestReleaseTag);
+              parts.push(relUrl ? `<a href="${esc(relUrl)}" target="_blank" rel="noopener" style="color:#fbbf24;">Release ${tag}</a>` : `Release ${tag}`);
+            }
+            if (r.hasNewCommit) {
+              const cUrl = safeGhUrl(r.latestCommitUrl);
+              const sha = esc(r.latestShortSha);
+              parts.push(cUrl ? `<a href="${esc(cUrl)}" target="_blank" rel="noopener" style="color:#7dd3fc;">Commit ${sha}</a>` : `Commit ${sha}`);
+            }
+            return `• <b>${esc(r.repo)}</b>: ${parts.join(' / ')}`;
+          });
+          el.innerHTML = `<div style="color:#fbbf24; font-weight:700;">🔔 មាន Update ថ្មីលើ GitHub Upstream!</div>${items.join('<br>')}`;
+          el.style.display = 'block';
+          if (settingsBtn && !state.isPackagedClient) {
+            settingsBtn.innerHTML = '⚙️ <span style="display:inline-block;width:7px;height:7px;border-radius:999px;background:#f59e0b;vertical-align:top;margin-left:1px;"></span>';
+            settingsBtn.title = 'ការកំណត់ (មាន Update ថ្មីលើ GitHub)';
+          }
+        } else {
+          el.innerHTML = `<span style="color:${report.errorCount ? '#fca5a5' : '#6ee7b7'};">${esc(report.summaryText || '✅ កូដទាញយក HongGuo គឺថ្មីបំផុតហើយ!')}</span>`;
+          el.style.display = 'block';
+          if (settingsBtn) {
+            settingsBtn.textContent = '⚙️';
+            settingsBtn.title = 'ការកំណត់';
+          }
+        }
+      }
+
+      async function checkUpstreamStatus(force = false, notifyUser = false) {
+        const report = await api(`/api/upstream-status${force ? '?refresh=1' : ''}`);
+        if (report) {
+          renderUpstreamReport(report);
+          if (notifyUser) {
+            toast(report.summaryText || 'បានពិនិត្យ GitHub Upstream រួចរាល់', report.hasUpdates ? 'warn' : 'ok');
+          } else if (report.hasUpdates && !state.isPackagedClient) {
+            toast('🔔 មាន Update ថ្មីលើ GitHub Upstream — សូមពិនិត្យក្នុង ការកំណត់!', 'warn');
+          }
+        }
+        return report;
+      }
+
+      if ($('btnCheckUpstream')) {
+        $('btnCheckUpstream').addEventListener('click', () => safeRun(async () => {
+          const btn = $('btnCheckUpstream');
+          const el = $('upstreamCheckStatus');
+          btn.disabled = true;
+          if (el) {
+            el.textContent = '⏳ កំពុងឆែកកំណែថ្មីពី GitHub Upstream...';
+            el.style.display = 'block';
+          }
+          try {
+            await checkUpstreamStatus(true, true);
           } finally {
             btn.disabled = false;
           }
@@ -4369,17 +4396,12 @@
       $('btnBrowseFolder').addEventListener('click', pickSaveFolder);
       $('btnSaveSettings').addEventListener('click', () => safeRun(async () => {
         const d = $('folderInput').value.trim();
-        const k = $('geminiInput').value.trim();
         if (d && d !== state.downloadDir) {
           const r = await api('/api/download-dir', { method: 'POST', body: JSON.stringify({ path: d }) });
           if (!r.success) { toast(r.error || 'ផ្លូវថតមិនត្រឹមត្រូវ', 'err'); return; }
           state.downloadDir = r.path;
           $('savePathLabel').textContent = r.path;
           $('vmPathLabel').textContent = r.path;
-        }
-        if (k) {
-          await api('/api/config', { method: 'POST', body: JSON.stringify({ apiKey: k }) });
-          $('geminiInput').value = '';
         }
         await loadConfig();
         loadLibrary(true);

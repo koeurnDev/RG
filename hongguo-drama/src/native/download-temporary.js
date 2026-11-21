@@ -2,7 +2,7 @@ const fs = require('node:fs/promises');
 const disk = require('node:fs');
 const path = require('node:path');
 
-const sameIdentity = (a, b) => b && Number.isSafeInteger(a.ino) && a.ino > 0
+const sameIdentity = (a, b) => b && typeof a.ino === 'number' && Number.isFinite(a.ino) && a.ino > 0
   && a.dev === b.dev && a.ino === b.ino && a.birthtimeMs === b.birthtimeMs;
 const identityOf = stat => ({ dev:stat.dev, ino:stat.ino, birthtimeMs:stat.birthtimeMs });
 const downloadTemporaryOwner = task => ({ taskId:String(task.id || ''), seriesId:String(task.hongguoInfo?.series_id || ''),
@@ -107,4 +107,33 @@ async function createDownloadTemporary(directory, { owner, onChange = () => {} }
     } };
 }
 
-module.exports = { createDownloadTemporary, removeOwnedFile, isOwnedFile, downloadTemporaryOwner, inspectDownloadTemporary, cleanupDownloadTemporary };
+async function reserveOwnedFile(file, onCreated) {
+  const handle = await fs.open(file, 'wx', 0o600);
+  let stat;
+  try {
+    stat = await handle.stat();
+    if (typeof onCreated === 'function') await onCreated(stat);
+  } catch (error) {
+    try { await handle.close(); } catch (_) {}
+    await fs.unlink(file).catch(() => {});
+    throw error;
+  }
+  try {
+    await handle.close();
+  } catch (error) {
+    await removeOwnedFile(file, identityOf(stat)).catch(() => {});
+    throw error;
+  }
+  const identity = identityOf(stat);
+  return {
+    check: async () => {
+      if (!await isOwnedFile(file, identity)) {
+        throw Object.assign(new Error('视频转换临时文件已变化，已有文件已保留，请重试'), { code: 'EEXIST' });
+      }
+    },
+    close: async () => {},
+    remove: () => removeOwnedFile(file, identity),
+  };
+}
+
+module.exports = { createDownloadTemporary, reserveOwnedFile, removeOwnedFile, isOwnedFile, downloadTemporaryOwner, inspectDownloadTemporary, cleanupDownloadTemporary };
