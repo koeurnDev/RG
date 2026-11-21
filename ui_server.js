@@ -128,6 +128,40 @@ function saveConfig(cfg) {
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(merged, null, 2), 'utf8');
 }
 
+const MAX_CUSTOM_SOURCES = 40;
+
+function appendCustomSources(draftItems = []) {
+  const current = sources.getCustomSources();
+  const existingKeys = new Set(current.map((s) => sources.endpointKey(s.url)));
+  const added = [];
+  let skippedCount = 0;
+  let limitReached = false;
+  for (const draft of (Array.isArray(draftItems) ? draftItems : [])) {
+    if (current.length + added.length >= MAX_CUSTOM_SOURCES) {
+      limitReached = true;
+      break;
+    }
+    const valid = sources.validateCustomSource({ name: draft?.name, url: draft?.url, enabled: draft?.enabled !== false });
+    const key = sources.endpointKey(valid.url);
+    if (existingKeys.has(key)) {
+      skippedCount += 1;
+      continue;
+    }
+    existingKeys.add(key);
+    added.push(valid);
+  }
+  const saved = added.length ? sources.setCustomSources([...current, ...added]) : current;
+  if (added.length) saveConfig({ CUSTOM_SOURCES: saved });
+  return {
+    added,
+    addedCount: added.length,
+    skippedCount,
+    limitReached,
+    sources: saved,
+    catalogSources: sources.getSourcesList(),
+  };
+}
+
 async function promptFolderPicker(initialPath = DEFAULT_DOWNLOAD_DIR) {
   if (customFolderPickerHandler) {
     return await customFolderPickerHandler(initialPath || DEFAULT_DOWNLOAD_DIR);
@@ -176,6 +210,10 @@ const CATEGORIES = [
   { id: 'new', name: '🆕 ចេញថ្មីៗ', badge: 'NEW', icon: '🆕' },
   { id: 'anime', name: '🎨 តុក្កតា / 漫剧', badge: 'ANIME', icon: '🎨' },
   { id: 'ai_anime', name: '🤖 តុក្កតា 3D / AI', badge: '3D ANIME', icon: '🤖' },
+  { id: 'urban', name: '🏙️ ទីក្រុង & ជីវិតពិត', badge: 'URBAN', icon: '🏙️' },
+  { id: 'god_war', name: '🐉 ស្ដេចនាគ & ក្បាច់គុន', badge: 'WAR GOD', icon: '🐉' },
+  { id: 'era', name: '📻 សម័យមុន 70/80', badge: 'ERA', icon: '📻' },
+  { id: 'campus', name: '🎓 សាលា & យុវវ័យ', badge: 'CAMPUS', icon: '🎓' },
   { id: 'sad', name: '😭 កម្សត់ & ទុក្ខសោក', badge: 'MELODRAMA', icon: '😭' },
   { id: 'sweet', name: '💖 Sweet & ផ្អែម', badge: 'SWEET', icon: '💖' },
   { id: 'romance', name: '🌹 ស្នេហារ៉ូមែនទិក', badge: 'ROMANCE', icon: '🌹' },
@@ -650,6 +688,36 @@ async function fetchCategoryDramas(category, page = 1, force = false) {
       ]);
       r1.results?.forEach(i => addItem(i, '悬疑'));
       r2.results?.forEach(i => addItem(i, '惊悚'));
+    } else if (category === 'urban') {
+      const [r1, r2] = await Promise.all([
+        browseList({ category: 'real-drama', genre: 'urban', page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('都市', { page: pg }).catch(() => ({ results: [] })),
+      ]);
+      r1.results?.forEach(i => addItem(i, '都市'));
+      r2.results?.forEach(i => addItem(i, '情感'));
+    } else if (category === 'god_war') {
+      const [r1, r2, r3] = await Promise.all([
+        searchHongguo('战神', { page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('龙王', { page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('赘婿', { page: pg }).catch(() => ({ results: [] })),
+      ]);
+      r1.results?.forEach(i => addItem(i, '战神'));
+      r2.results?.forEach(i => addItem(i, '龙王'));
+      r3.results?.forEach(i => addItem(i, '赘婿'));
+    } else if (category === 'era') {
+      const [r1, r2] = await Promise.all([
+        searchHongguo('年代', { page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('八零', { page: pg }).catch(() => ({ results: [] })),
+      ]);
+      r1.results?.forEach(i => addItem(i, '年代'));
+      r2.results?.forEach(i => addItem(i, '八零'));
+    } else if (category === 'campus') {
+      const [r1, r2] = await Promise.all([
+        searchHongguo('校园', { page: pg }).catch(() => ({ results: [] })),
+        searchHongguo('青春', { page: pg }).catch(() => ({ results: [] })),
+      ]);
+      r1.results?.forEach(i => addItem(i, '校园'));
+      r2.results?.forEach(i => addItem(i, '青春'));
     }
   } catch (err) {
     console.error(`[Category ${category} p${pg}] Error:`, err.message);
@@ -878,7 +946,7 @@ function searchCachedDramasByKhmer(khmerQuery, preferredSource = '') {
 
 async function smartResolve(input, preferredSource = 'hongguo', cookiesFromBrowser = '') {
   const str = String(input || '').trim();
-  const seriesId = extractSeriesId(str);
+  const seriesId = extractSeriesId(str) || (preferredSource === 'ytdm' ? sources.resolveYtdmUrl(str) : null);
   if (seriesId) {
     const info = await fetchEpisodeListSafe(seriesId);
     return {
@@ -1563,6 +1631,44 @@ async function runBatchDownload(job) {
           for (let vi = 0; vi < variants.length; vi++) {
             if (job.cancelled || signal.aborted) return;
             const variant = variants[vi];
+            if (variant.isYtdlp && variant.ytdlpUrl) {
+              const ytTmpDir = path.join(path.dirname(tempOut), `.yt_tmp_${job.id}_${epNum}`);
+              job.episodeStates[epNum] = { status: 'downloading', percent: 12, text: '⬇️ កំពុងទាញ (yt-dlp)' };
+              job.message = `⬇️ កំពុងទាញភាគ ${epNum}/${totalDramaEps} តាម yt-dlp...`;
+              emitSnapshot(job, false);
+              try {
+                const ytRes = await ytdlp.downloadYtdlp({
+                  url: variant.ytdlpUrl,
+                  outputDir: ytTmpDir,
+                  filePrefix: `ep_${epNum}`,
+                  isPlaylist: false,
+                  qualityPreset: qualityMode === 'fast' ? '720p' : '1080p',
+                  useAria2: false,
+                  signal,
+                  activeChildren: job.activeChildren,
+                  onProgress: (p) => {
+                    if (p?.bytesDelta) recordBytes(p.bytesDelta);
+                    const pct = Math.min(92, Math.max(12, Number(p?.itemPct) || 12));
+                    job.episodeStates[epNum] = { status: 'downloading', percent: pct, text: `⬇️ ${pct}%` };
+                    updateOverallProgress();
+                    emitSnapshot(job, false);
+                  },
+                });
+                const dlFile = ytRes?.mainFile;
+                if (!dlFile || !fs.existsSync(dlFile)) throw new Error('yt-dlp មិនបានបង្កើតឯកសារវីដេអូទេ');
+                try { if (fs.existsSync(tempOut)) fs.unlinkSync(tempOut); } catch (_) {}
+                await fsp.rename(dlFile, tempOut);
+                downloadedVariant = { ...variant, format: 'hls' };
+                break;
+              } catch (ytErr) {
+                if (job.cancelled || signal.aborted || ytErr.message === 'CANCELLED') return;
+                lastDlError = ytErr;
+                try { if (fs.existsSync(tempOut)) fs.unlinkSync(tempOut); } catch (_) {}
+                continue;
+              } finally {
+                try { fs.rmSync(ytTmpDir, { recursive: true, force: true }); } catch (_) {}
+              }
+            }
             const isHls = variant.format === 'hls' || /\.m3u8(\?|$)/i.test(variant.url);
             const label = isHls ? 'HLS Stream' : (variant.codec === 'bytevc2' ? `ByteVC2 ${variant.quality}` : `${variant.codec || 'MP4'} ${variant.quality}`.trim());
             job.episodeStates[epNum] = { status: 'downloading', percent: 12, text: `⬇️ ទាញយក (${label})` };
@@ -2221,18 +2327,57 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await readJsonBody(req);
       const valid = sources.validateCustomSource({ name: body.name, url: body.url, enabled: body.enabled !== false });
-      const current = sources.getCustomSources();
-      if (current.length >= 20) {
-        return sendJson(res, { success: false, error: 'អាចបន្ថែមប្រភពផ្ទាល់ខ្លួនបានអតិបរមា ២០ ប៉ុណ្ណោះ' }, 400);
+      const merged = appendCustomSources([valid]);
+      if (merged.limitReached) {
+        return sendJson(res, { success: false, error: `អាចបន្ថែមប្រភពផ្ទាល់ខ្លួនបានអតិបរមា ${MAX_CUSTOM_SOURCES} ប៉ុណ្ណោះ` }, 400);
       }
-      const next = [...current, valid];
-      const saved = sources.setCustomSources(next);
-      saveConfig({ CUSTOM_SOURCES: saved });
+      if (!merged.addedCount) {
+        return sendJson(res, { success: false, error: 'ប្រភព URL នេះត្រូវបានបន្ថែមរួចហើយ' }, 400);
+      }
       return sendJson(res, {
         success: true,
-        source: valid,
-        sources: saved,
-        catalogSources: sources.getSourcesList(),
+        source: merged.added[0],
+        sources: merged.sources,
+        catalogSources: merged.catalogSources,
+      });
+    } catch (err) {
+      return sendJson(res, { success: false, error: err.message }, 400);
+    }
+  }
+
+  if (url.pathname === '/api/custom-sources/batch-test' && req.method === 'POST') {
+    try {
+      const body = await readJsonBody(req);
+      const result = await sources.batchTestCustomSources({ input: body.input });
+      return sendJson(res, result);
+    } catch (err) {
+      return sendJson(res, { success: false, error: err.message }, 400);
+    }
+  }
+
+  if (url.pathname === '/api/custom-sources/batch' && req.method === 'POST') {
+    try {
+      const body = await readJsonBody(req);
+      if (!Array.isArray(body.items) || !body.items.length) {
+        return sendJson(res, { success: false, error: 'សូមជ្រើសរើសប្រភពយ៉ាងហោចណាស់ ១ ដើម្បីនាំចូល' }, 400);
+      }
+      const normalized = [];
+      for (const item of body.items) {
+        try {
+          normalized.push(sources.validateCustomSource({ name: item?.name, url: item?.url, enabled: true }));
+        } catch (_) {}
+      }
+      if (!normalized.length) {
+        return sendJson(res, { success: false, error: 'គ្មានប្រភព Public URL ត្រឹមត្រូវសម្រាប់នាំចូលទេ' }, 400);
+      }
+      const merged = appendCustomSources(normalized);
+      return sendJson(res, {
+        success: true,
+        addedCount: merged.addedCount,
+        skippedCount: merged.skippedCount,
+        limitReached: merged.limitReached,
+        sources: merged.sources,
+        catalogSources: merged.catalogSources,
       });
     } catch (err) {
       return sendJson(res, { success: false, error: err.message }, 400);

@@ -1371,6 +1371,28 @@
             <span id="customCmsStatus" style="font-size:11.5px; color:var(--muted);"></span>
           </div>
           <div id="customCmsList" style="display:flex; flex-direction:column; gap:6px; max-height:140px; overflow-y:auto;"></div>
+          <details id="customCmsBatchDetails" style="border-top:1px dashed rgba(99,102,241,0.3); padding-top:8px;">
+            <summary style="cursor:pointer; font-size:12px; font-weight:700; color:var(--text); user-select:none;">📦 Batch Import បញ្ជី TVBox / ZyPlayer JSON &amp; Auto-Test</summary>
+            <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px;">
+              <div style="display:flex; gap:8px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
+                <div style="display:flex; gap:6px; align-items:center;">
+                  <button id="btnPickCmsFile" type="button" class="btn btn-xs">📂 ជ្រើសឯកសារ JSON/TXT</button>
+                  <input id="customCmsBatchFile" type="file" accept=".json,.txt,.conf" style="display:none;" />
+                </div>
+                <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--muted); cursor:pointer;">
+                  <input id="chkBatchShortOnly" type="checkbox" /> យកតែប្រភពមានប្រភេទ 短剧
+                </label>
+              </div>
+              <textarea id="customCmsBatchInput" rows="3" placeholder="បិទភ្ជាប់ TVBox/ZyPlayer JSON, Link .json ឬ URL មួយជួរមួយ..." style="width:100%; box-sizing:border-box; padding:7px 9px; border-radius:8px; border:1px solid var(--border); background:var(--panel-2); color:var(--text); font-size:11.5px; font-family:inherit; resize:vertical;"></textarea>
+              <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                <button id="btnBatchTestCms" type="button" class="btn btn-xs">🧪 Auto-Test ទាំងអស់</button>
+                <button id="btnBatchAutoImportCms" type="button" class="btn btn-primary btn-xs">⚡ Test &amp; នាំចូលស្វ័យប្រវត្តិ</button>
+                <button id="btnBatchSaveCms" type="button" class="btn btn-xs" style="display:none;">➕ នាំចូលប្រភពបានជ្រើស (0)</button>
+                <span id="customCmsBatchStatus" style="font-size:11.5px; color:var(--muted);"></span>
+              </div>
+              <div id="customCmsBatchPreview" style="display:none; flex-direction:column; gap:5px; max-height:160px; overflow-y:auto;"></div>
+            </div>
+          </details>
         </div>
 
         <div id="settingsAppFooter" style="padding-top: 6px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
@@ -1534,6 +1556,11 @@
         { id: 'new', label: '🆕 ចេញថ្មីៗ' },
         { id: 'anime', label: '🎨 តុក្កតា / 漫剧' },
         { id: 'ai_anime', label: '🤖 តុក្កតា 3D / AI' },
+        { id: 'urban', label: '🏙️ ទីក្រុង & ជីវិតពិត' },
+        { id: 'god_war', label: '🐉 ស្ដេចនាគ & ក្បាច់គុន' },
+        { id: 'suspense', label: '🔍 អាថ៌កំបាំង' },
+        { id: 'era', label: '📻 សម័យមុន 70/80' },
+        { id: 'campus', label: '🎓 សាលា & យុវវ័យ' },
         { id: 'sad', label: '😭 កម្សត់' },
         { id: 'sweet', label: '💖 ផ្អែមល្ហែម' },
         { id: 'romance', label: '🌹 ស្នេហា' },
@@ -1547,6 +1574,7 @@
 
       const DEFAULT_SOURCES = [
         { id: 'hongguo', label: '🔥 HongGuo (红果)' },
+        { id: 'ytdm', label: '📺 YouTube / DM (រឿងពេញ)' },
         { id: 'dramabox', label: '🎬 DramaBox' },
         { id: 'reelshort', label: '🎭 ReelShort' },
         { id: 'dramawave', label: '🌊 DramaWave' },
@@ -4497,6 +4525,161 @@
           }
           await loadCustomCmsSources();
           toast('បានលុបប្រភពផ្ទាល់ខ្លួន', 'ok');
+        }));
+      }
+
+      let batchCmsPreviewRows = [];
+      function syncBatchSaveButton() {
+        const btn = $('btnBatchSaveCms');
+        if (!btn) return;
+        const checkedCount = batchCmsPreviewRows.filter((r) => r.checked).length;
+        btn.style.display = batchCmsPreviewRows.length ? 'inline-flex' : 'none';
+        btn.disabled = checkedCount === 0;
+        btn.textContent = `➕ នាំចូលប្រភពបានជ្រើស (${checkedCount})`;
+      }
+
+      function applyBatchFilterSelection() {
+        const shortOnly = Boolean($('chkBatchShortOnly')?.checked);
+        batchCmsPreviewRows = batchCmsPreviewRows.map((r) => ({
+          ...r,
+          checked: Boolean(r.ok && !r.alreadyAdded && (!shortOnly || r.hasShortDrama)),
+        }));
+      }
+
+      function renderBatchCmsPreview() {
+        const box = $('customCmsBatchPreview');
+        if (!box) return;
+        if (!batchCmsPreviewRows.length) {
+          box.style.display = 'none';
+          box.innerHTML = '';
+          syncBatchSaveButton();
+          return;
+        }
+        box.style.display = 'flex';
+        box.innerHTML = batchCmsPreviewRows.map((r, idx) => {
+          const badge = !r.ok
+            ? `<span style="color:var(--err);">❌ ${esc(r.error || 'បរាជ័យ')}</span>`
+            : r.alreadyAdded
+              ? '<span style="color:var(--muted);">⚠️ មានរួចហើយ</span>'
+              : `<span style="color:var(--ok);">✅ ${r.count} រឿង • ${r.latencyMs}ms${r.hasShortDrama ? ` • 🎬 ${esc(r.shortDramaGenre?.label || '短剧')}` : ''}</span>`;
+          return `
+            <label style="display:flex; align-items:flex-start; gap:7px; padding:5px 7px; border-radius:7px; border:1px solid var(--border); background:var(--panel-2); cursor:${r.ok && !r.alreadyAdded ? 'pointer' : 'default'};">
+              <input type="checkbox" data-batch-idx="${idx}" ${r.checked ? 'checked' : ''} ${(!r.ok || r.alreadyAdded) ? 'disabled' : ''} style="margin-top:2px;" />
+              <div style="min-width:0; flex:1;">
+                <div style="font-size:11.5px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(r.name)}</div>
+                <div style="font-size:10.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(r.url)}</div>
+                <div style="font-size:10.5px;">${badge}</div>
+              </div>
+            </label>
+          `;
+        }).join('');
+        syncBatchSaveButton();
+      }
+
+      async function saveBatchCmsItems(items) {
+        const r = await api('/api/custom-sources/batch', { method: 'POST', body: JSON.stringify({ items }) });
+        if (!r || !r.success) throw new Error((r && r.error) || 'នាំចូលបរាជ័យ');
+        if (Array.isArray(r.catalogSources)) {
+          state.sources = r.catalogSources;
+          renderSources();
+        }
+        await loadCustomCmsSources();
+        return r;
+      }
+
+      if ($('btnPickCmsFile') && $('customCmsBatchFile')) {
+        $('btnPickCmsFile').addEventListener('click', () => $('customCmsBatchFile').click());
+        $('customCmsBatchFile').addEventListener('change', (e) => {
+          const file = e.target.files && e.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            if ($('customCmsBatchInput')) $('customCmsBatchInput').value = String(reader.result || '');
+            if ($('customCmsBatchStatus')) {
+              $('customCmsBatchStatus').style.color = 'var(--muted)';
+              $('customCmsBatchStatus').textContent = `📄 បានផ្ទុកឯកសារ ${file.name}`;
+            }
+          };
+          reader.readAsText(file, 'utf8');
+          e.target.value = '';
+        });
+      }
+
+      if ($('chkBatchShortOnly')) {
+        $('chkBatchShortOnly').addEventListener('change', () => {
+          if (!batchCmsPreviewRows.length) return;
+          applyBatchFilterSelection();
+          renderBatchCmsPreview();
+        });
+      }
+
+      if ($('customCmsBatchPreview')) {
+        $('customCmsBatchPreview').addEventListener('change', (e) => {
+          const cb = e.target.closest('[data-batch-idx]');
+          if (!cb) return;
+          const idx = Number(cb.dataset.batchIdx);
+          if (batchCmsPreviewRows[idx]) {
+            batchCmsPreviewRows[idx].checked = Boolean(cb.checked);
+            syncBatchSaveButton();
+          }
+        });
+      }
+
+      async function runBatchTestCms(autoImport = false) {
+        const input = ($('customCmsBatchInput')?.value || '').trim();
+        const st = $('customCmsBatchStatus');
+        if (!input) { toast('សូមបិទភ្ជាប់ JSON, Link .json ឬ URL ជាមុនសិន', 'err'); return; }
+        if (st) { st.style.color = 'var(--muted)'; st.textContent = '⏳ កំពុង Auto-Test ប្រភពទាំងអស់...'; }
+        const testRes = await api('/api/custom-sources/batch-test', { method: 'POST', body: JSON.stringify({ input }) });
+        if (!testRes || !testRes.success) {
+          if (st) { st.style.color = 'var(--err)'; st.textContent = `❌ ${(testRes && testRes.error) || 'Auto-Test បរាជ័យ'}`; }
+          return;
+        }
+        batchCmsPreviewRows = Array.isArray(testRes.results) ? testRes.results : [];
+        applyBatchFilterSelection();
+        if (!autoImport) {
+          renderBatchCmsPreview();
+          const sum = testRes.summary || {};
+          if (st) {
+            st.style.color = sum.working ? 'var(--ok)' : 'var(--err)';
+            st.textContent = `ដើរ ${sum.working || 0}/${sum.total || 0} (短剧 ${sum.shortDramaCount || 0}) • បរាជ័យ ${sum.failed || 0}`;
+          }
+          return;
+        }
+        const toSave = batchCmsPreviewRows.filter((r) => r.checked).map((r) => ({ name: r.name, url: r.url }));
+        if (!toSave.length) {
+          renderBatchCmsPreview();
+          if (st) { st.style.color = 'var(--err)'; st.textContent = 'មិនមានប្រភពដើរថ្មីដែលត្រូវនាំចូលទេ'; }
+          return;
+        }
+        const saved = await saveBatchCmsItems(toSave);
+        batchCmsPreviewRows = batchCmsPreviewRows.map((r) => (r.checked ? { ...r, alreadyAdded: true, checked: false } : r));
+        renderBatchCmsPreview();
+        if (st) {
+          st.style.color = 'var(--ok)';
+          st.textContent = `✅ បាននាំចូល ${saved.addedCount} ប្រភព${saved.limitReached ? ' (ពេញកំណត់)' : ''}`;
+        }
+        toast(`បាននាំចូល ${saved.addedCount} ប្រភព CMS ✓`, 'ok');
+      }
+
+      if ($('btnBatchTestCms')) {
+        $('btnBatchTestCms').addEventListener('click', () => safeRun(() => runBatchTestCms(false)));
+      }
+      if ($('btnBatchAutoImportCms')) {
+        $('btnBatchAutoImportCms').addEventListener('click', () => safeRun(() => runBatchTestCms(true)));
+      }
+      if ($('btnBatchSaveCms')) {
+        $('btnBatchSaveCms').addEventListener('click', () => safeRun(async () => {
+          const toSave = batchCmsPreviewRows.filter((r) => r.checked).map((r) => ({ name: r.name, url: r.url }));
+          if (!toSave.length) { toast('សូមជ្រើសយ៉ាងហោចណាស់ ១ ប្រភព', 'err'); return; }
+          const saved = await saveBatchCmsItems(toSave);
+          batchCmsPreviewRows = batchCmsPreviewRows.map((r) => (r.checked ? { ...r, alreadyAdded: true, checked: false } : r));
+          renderBatchCmsPreview();
+          if ($('customCmsBatchStatus')) {
+            $('customCmsBatchStatus').style.color = 'var(--ok)';
+            $('customCmsBatchStatus').textContent = `✅ បាននាំចូល ${saved.addedCount} ប្រភពថ្មី`;
+          }
+          toast(`បាននាំចូល ${saved.addedCount} ប្រភព CMS ✓`, 'ok');
         }));
       }
       $('btnBrowseFolder').addEventListener('click', pickSaveFolder);

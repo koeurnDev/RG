@@ -470,14 +470,225 @@ test('ui_server /api/custom-sources CRUD persists to config.json and updates /ap
     const savedCfg = JSON.parse(fs.readFileSync(process.env.HDRG_CONFIG_FILE, 'utf8'));
     assert.strictEqual(savedCfg.CUSTOM_SOURCES.length, 1);
 
+    // Batch test + batch import CRUD with TVBox JSON comments, spider skip, SSRF protection, and dedup
+    const axios = require('axios');
+    const origGet = axios.get;
+    try {
+      axios.get = async (reqUrl) => {
+        const u = new URL(reqUrl);
+        if (u.hostname === 'vod.example.com') {
+          return {
+            data: JSON.stringify({
+              code: 1,
+              class: [{ type_id: 2, type_name: '连续剧' }],
+              list: [{ vod_id: 10, vod_name: 'Existing VOD', vod_pic: 'https://cdn.example.com/10.jpg' }],
+            }),
+          };
+        }
+        if (u.hostname === 'short.example.com') {
+          return {
+            data: JSON.stringify({
+              code: 1,
+              class: [{ type_id: 21, type_name: '短剧' }],
+              list: [{ vod_id: 1, vod_name: 'Short 1', vod_pic: 'https://cdn.example.com/1.jpg' }],
+            }),
+          };
+        }
+        if (u.hostname === 'movie.example.com') {
+          return {
+            data: JSON.stringify({
+              code: 1,
+              class: [{ type_id: 1, type_name: '电影' }],
+              list: [{ vod_id: 2, vod_name: 'Movie 2', vod_pic: 'https://cdn.example.com/2.jpg' }],
+            }),
+          };
+        }
+        throw new Error('connect ETIMEDOUT');
+      };
+
+      const batchPayload = [
+        '// TVBox comment header',
+        '{',
+        '  "sites": [',
+        '    { "key": "dup", "name": "Existing Dup", "type": 0, "api": "https://vod.example.com/api.php/provide/vod/at/xml" },',
+        '    { "key": "short", "name": "ShortHub", "type": 1, "api": "https://short.example.com/api.php/provide/vod/" },',
+        '    { "key": "mov", "name": "MovieHub", "type": 1, "api": "https://movie.example.com/api.php/provide/vod/" },',
+        '    { "key": "dead", "name": "DeadHub", "type": 1, "api": "https://dead.example.com/api.php/provide/vod/" },',
+        '    { "key": "spider", "name": "SpiderOnly", "type": 3, "api": "csp_Demo" },',
+        '    { "key": "ssrf", "name": "LocalSSRF", "type": 1, "api": "http://127.0.0.1/api.php/provide/vod/" }',
+        '  ]',
+        '}',
+      ].join('\n');
+
+      const btRes = await jsonReq(info.port, 'POST', '/api/custom-sources/batch-test', { input: batchPayload });
+      assert.strictEqual(btRes.status, 200);
+      assert.strictEqual(btRes.json.summary.total, 4);
+      assert.strictEqual(btRes.json.summary.working, 3);
+      assert.strictEqual(btRes.json.summary.failed, 1);
+      assert.strictEqual(btRes.json.summary.shortDramaCount, 1);
+      const dupRow = btRes.json.results.find((r) => r.name === 'Existing Dup');
+      assert.strictEqual(dupRow.alreadyAdded, true);
+      const shortRow = btRes.json.results.find((r) => r.name === 'ShortHub');
+      assert.strictEqual(shortRow.hasShortDrama, true);
+
+      const bSave = await jsonReq(info.port, 'POST', '/api/custom-sources/batch', {
+        items: btRes.json.results.filter((r) => r.ok).map((r) => ({ name: r.name, url: r.url })),
+      });
+      assert.strictEqual(bSave.status, 200);
+      assert.strictEqual(bSave.json.addedCount, 2, 'skips already-added dup and imports 2 new working sources');
+      assert.strictEqual(bSave.json.skippedCount, 1);
+      assert.strictEqual(bSave.json.sources.length, 3);
+    } finally {
+      axios.get = origGet;
+    }
+
     const delRes = await jsonReq(info.port, 'POST', '/api/custom-sources/delete', { id: createdId });
     assert.strictEqual(delRes.json.success, true);
-    assert.strictEqual(delRes.json.sources.length, 0);
+    assert.strictEqual(delRes.json.sources.length, 2);
   } finally {
     try { if (started && uiServer) uiServer.stopServer(); } catch (_) {}
     try { require('./lib/sources').setCustomSources([]); } catch (_) {}
     if (prevCfg === undefined) delete process.env.HDRG_CONFIG_FILE; else process.env.HDRG_CONFIG_FILE = prevCfg;
     if (prevIso === undefined) delete process.env.HDRG_ISOLATED_CONFIG; else process.env.HDRG_ISOLATED_CONFIG = prevIso;
     fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('ytdm YouTube/Dailymotion adapter, lockupViewModel parser, extractVariants ytdlp passthrough, and GoodShort multi-column page 2', async () => {
+  const axios = require('axios');
+  const ytdm = require('./lib/ytdm');
+  const gs = require('./lib/goodshort');
+  const sources = require('./lib/sources');
+  const dl = require('./lib/downloader');
+
+  // ID & URL resolution
+  assert.strictEqual(ytdm.resolveSeriesId('https://www.youtube.com/playlist?list=PLbUFpdWy6Yb9jgJ4R'), 'ytdm:pl:PLbUFpdWy6Yb9jgJ4R');
+  assert.strictEqual(ytdm.resolveSeriesId('https://www.youtube.com/watch?v=MircdZfJOlw&list=PLbUFpdWy6Yb9jgJ4R'), 'ytdm:v:MircdZfJOlw');
+  assert.strictEqual(ytdm.resolveSeriesId('https://youtu.be/MircdZfJOlw'), 'ytdm:v:MircdZfJOlw');
+  assert.strictEqual(ytdm.resolveSeriesId('https://www.dailymotion.com/video/x2gh6ox'), 'ytdm:dm:x2gh6ox');
+  assert.throws(() => ytdm.resolveSeriesId('https://evil.example.com/watch?v=12345678'), /YouTube/);
+
+  // sources routing preserves social tab URL separation while resolving ytdm: IDs and explicit ytdm URLs
+  assert.strictEqual(sources.detectSourceFromId('ytdm:pl:PLbUFpdWy6Yb9jgJ4R'), 'ytdm');
+  assert.strictEqual(sources.resolveDramaUrlOrId('ytdm:dm:x2gh6ox'), 'ytdm:dm:x2gh6ox');
+  assert.strictEqual(sources.resolveDramaUrlOrId('https://www.youtube.com/watch?v=MircdZfJOlw'), null);
+  assert.strictEqual(sources.resolveYtdmUrl('https://www.youtube.com/playlist?list=PLbUFpdWy6Yb9jgJ4R'), 'ytdm:pl:PLbUFpdWy6Yb9jgJ4R');
+  assert.ok(sources.getSourcesList().some((s) => s.id === 'ytdm'));
+
+  // extractYoutubeItems parses both lockupViewModel playlist and videoRenderer while filtering short clips
+  const sampleYtData = {
+    contents: {
+      twoColumnSearchResultsRenderer: {
+        primaryContents: {
+          sectionListRenderer: {
+            contents: [{
+              itemSectionRenderer: {
+                contents: [
+                  {
+                    lockupViewModel: {
+                      contentId: 'PLbUFpdWy6Yb9jgJ4R',
+                      contentType: 'LOCKUP_CONTENT_TYPE_PLAYLIST',
+                      metadata: { lockupMetadataViewModel: { title: { content: 'Khmer Drama Series' } } },
+                      contentImage: {
+                        collectionThumbnailViewModel: {
+                          primaryThumbnail: {
+                            thumbnailViewModel: {
+                              image: { sources: [{ url: 'https://i.ytimg.com/vi/MircdZfJOlw/hq720.jpg' }] },
+                              overlays: [{ thumbnailOverlayBadgeViewModel: { thumbnailBadges: [{ thumbnailBadgeViewModel: { text: '42 videos' } }] } }],
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                  {
+                    videoRenderer: {
+                      videoId: 'ShortClip111',
+                      title: { simpleText: 'Short Trailer' },
+                      lengthText: { simpleText: '0:45' },
+                      thumbnail: { thumbnails: [{ url: 'https://i.ytimg.com/vi/ShortClip111/hqdefault.jpg' }] },
+                    },
+                  },
+                  {
+                    videoRenderer: {
+                      videoId: 'FullDrama999',
+                      title: { runs: [{ text: 'Full Khmer Drama Movie' }] },
+                      lengthText: { simpleText: '1:15:00' },
+                      thumbnail: { thumbnails: [{ url: 'https://i.ytimg.com/vi/FullDrama999/hqdefault.jpg' }] },
+                    },
+                  },
+                ],
+              },
+            }],
+          },
+        },
+      },
+    },
+  };
+  const fakeHtml = `<script>var ytInitialData = ${JSON.stringify(sampleYtData)};</script>`;
+  const parsedCards = ytdm.extractYoutubeItems(fakeHtml, { minDurationSec: 240 });
+  assert.strictEqual(parsedCards.length, 2);
+  assert.strictEqual(parsedCards[0].series_id, 'ytdm:pl:PLbUFpdWy6Yb9jgJ4R');
+  assert.strictEqual(parsedCards[0].episode_count, 42);
+  assert.strictEqual(parsedCards[1].series_id, 'ytdm:v:FullDrama999');
+
+  // Play info & downloader extractVariants ytdlp passthrough
+  const playRes = await ytdm.fetchPlayUrlSingle('ytdm:v:FullDrama999', 'ytdm:pl:PLbUFpdWy6Yb9jgJ4R');
+  assert.strictEqual(playRes.isYtdlp, true);
+  assert.strictEqual(playRes.ytdlpUrl, 'https://www.youtube.com/watch?v=FullDrama999');
+  const vars = dl.extractVariants(playRes, 'fast');
+  assert.strictEqual(vars[0].isYtdlp, true);
+  assert.strictEqual(vars[0].ytdlpUrl, 'https://www.youtube.com/watch?v=FullDrama999');
+  const mismatch = await ytdm.fetchPlayUrlSingle('ytdm:v:FullDrama999', 'ytdm:v:OtherVideo1');
+  assert.strictEqual(mismatch.url, null);
+
+  // GoodShort page 2 advances across columns when column 1 is empty
+  const origPost = axios.post;
+  try {
+    axios.post = async (reqUrl, body) => {
+      if (String(reqUrl).endsWith('/home/index')) {
+        return {
+          data: {
+            status: 0,
+            data: {
+              pageColumns: [
+                {
+                  style: 'NORMAL',
+                  name: 'Col A',
+                  columnResourceUrl: 'Col-A',
+                  items: [{ bookId: 100001, bookName: 'Drama A', cover: 'https://cdn.example.com/a.jpg', chapterCount: 20 }],
+                },
+                {
+                  style: 'NORMAL',
+                  name: 'Col B',
+                  columnResourceUrl: 'Col-B',
+                  items: [{ bookId: 100002, bookName: 'Drama B', cover: 'https://cdn.example.com/b.jpg', chapterCount: 30 }],
+                },
+              ],
+            },
+          },
+        };
+      }
+      if (body.columnResourceUrl === 'Col-A') {
+        return { data: { status: 0, data: { items: [], totalSize: 0, more: false } } };
+      }
+      return {
+        data: {
+          status: 0,
+          data: {
+            items: [{ bookId: 100003, bookName: 'Drama C', cover: 'https://cdn.example.com/c.jpg', chapterCount: 40 }],
+            totalSize: 10,
+            more: false,
+          },
+        },
+      };
+    };
+    const g1 = await gs.browseList({ genre: '', page: 1 });
+    assert.strictEqual(g1.results.length, 2);
+    const g2 = await gs.browseList({ genre: '', page: 2 });
+    assert.strictEqual(g2.results.length, 1);
+    assert.strictEqual(g2.results[0].series_id, 'goodshort:100003');
+  } finally {
+    axios.post = origPost;
   }
 });
