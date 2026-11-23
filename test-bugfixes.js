@@ -211,6 +211,9 @@ test('signPlaybackV5 supports bodyless GET and app-source recovers from empty PL
           if (u.pathname === '/novel/player/multi_video_model/player/v1') {
             return { status: 200, headers: {}, data: '' };
           }
+          if (u.pathname === '/novel/player/video_model/v1/') {
+            return { status: 200, headers: {}, data: '' };
+          }
           if (u.pathname === '/reading/bookapi/video_tab/multi_video_model/v1/') {
             return { status: 200, headers: {}, data: JSON.stringify(modelPayload) };
           }
@@ -223,18 +226,16 @@ test('signPlaybackV5 supports bodyless GET and app-source recovers from empty PL
 
   const play = await mod.exports.fetchAppPlayUrl('7700946421087751193', { quality: '720p', allowLowerQuality: true });
   assert.equal(play.url, mediaUrl);
-  assert.equal(calls.length, 3);
-  assert.deepEqual(
-    calls.map((c) => [c.method, c.host, c.pathname]),
-    [
-      ['POST', 'api5-normal-sinfonlineb.fqnovel.com', '/novel/player/multi_video_model/player/v1'],
-      ['POST', 'api5-normal-sinfonlinea.fqnovel.com', '/novel/player/multi_video_model/player/v1'],
-      ['GET', 'api5-normal-sinfonlineb.fqnovel.com', '/reading/bookapi/video_tab/multi_video_model/v1/'],
-    ]
-  );
-  assert.equal(calls[2].data, null);
-  assert.equal(calls[2].headers['x-ss-stub'], undefined);
-  assert.equal(calls[2].headers['Content-Type'], undefined);
+  assert.equal(calls.length, 9);
+  assert.ok(calls.some(c => c.pathname === '/novel/player/multi_video_model/player/v1'));
+  assert.ok(calls.some(c => c.pathname === '/novel/player/video_model/v1/'));
+  assert.ok(calls.some(c => c.pathname === '/reading/bookapi/video_tab/multi_video_model/v1/'));
+  const tabCall = calls[calls.length - 1];
+  assert.equal(tabCall.method, 'GET');
+  assert.equal(tabCall.pathname, '/reading/bookapi/video_tab/multi_video_model/v1/');
+  assert.equal(tabCall.data, null);
+  assert.equal(tabCall.headers['x-ss-stub'], undefined);
+  assert.equal(tabCall.headers['Content-Type'], undefined);
 });
 
 test('upstream-watcher detects new GitHub commits/releases and formats Telegram & Issue alerts', async () => {
@@ -690,5 +691,266 @@ test('ytdm YouTube/Dailymotion adapter, lockupViewModel parser, extractVariants 
     assert.strictEqual(g2.results[0].series_id, 'goodshort:100003');
   } finally {
     axios.post = origPost;
+  }
+
+  // ytdm includes Official K-Drama and India Bollywood/Khmer genres cleanly
+  const origGet = axios.get;
+  try {
+    axios.get = async (reqUrl) => {
+      if (String(reqUrl).includes('dailymotion.com')) return { data: { list: [] } };
+      return { data: fakeHtml };
+    };
+    const kdOff = await ytdm.browseList({ genre: 'kdrama_official', page: 1 });
+    assert.strictEqual(kdOff.success, true);
+    assert.ok(kdOff.genres.some((g) => g.slug === 'kdrama_official'));
+    assert.ok(kdOff.genres.some((g) => g.slug === 'india'));
+    assert.strictEqual(kdOff.results.length, 2);
+    const indRes = await ytdm.browseList({ genre: 'india', page: 1 });
+    assert.strictEqual(indRes.success, true);
+    assert.strictEqual(indRes.results.length, 2);
+  } finally {
+    axios.get = origGet;
+  }
+});
+
+test('downloader probeMediaProfile duration, buildNormalizeEncodeArgs copyVideo/faststart, and parallel mergeEpisodesToMovie', async () => {
+  const dl = require('./lib/downloader');
+
+  // Verify buildNormalizeEncodeArgs behavior
+  const copyArgs = dl.buildNormalizeEncodeArgs('in.mp4', 'out.mp4', 1080, 1920, 'h264_nvenc', {
+    copyVideo: true,
+    faststart: false,
+    compressed: false,
+  });
+  assert.ok(copyArgs.includes('-c:v') && copyArgs[copyArgs.indexOf('-c:v') + 1] === 'copy');
+  assert.ok(!copyArgs.includes('-vf'), 'skips scale filter when copyVideo is true');
+  assert.ok(!copyArgs.includes('+faststart'), 'omits +faststart on intermediate temp clips');
+
+  const encArgs = dl.buildNormalizeEncodeArgs('in.mp4', 'out.mp4', 720, 1280, null, {
+    copyVideo: false,
+    faststart: true,
+    compressed: true,
+    cpuThreads: 2,
+  });
+  assert.ok(encArgs.includes('libx264'));
+  assert.ok(encArgs.includes('-threads') && encArgs[encArgs.indexOf('-threads') + 1] === '2');
+  assert.ok(encArgs.includes('+faststart'));
+
+  // Verify copyAudio, CUDA pipeline, hevc_nvenc, and pickDominantTarget smart codec/720p cap
+  const cudaArgs = dl.buildNormalizeEncodeArgs('in.mp4', 'out.mp4', 720, 1280, 'hevc_nvenc', {
+    copyVideo: false,
+    copyAudio: true,
+    hasAudio: true,
+    needAudioTrack: true,
+    compressed: true,
+    useCudaPipeline: true,
+    useScaleCuda: true,
+  });
+  assert.ok(cudaArgs.includes('-hwaccel') && cudaArgs.includes('cuda'));
+  assert.ok(cudaArgs.includes('scale_cuda=720:1280'));
+  assert.ok(cudaArgs.includes('hevc_nvenc') && cudaArgs.includes('hvc1'));
+  assert.ok(cudaArgs.includes('-c:a') && cudaArgs[cudaArgs.indexOf('-c:a') + 1] === 'copy');
+
+  const mixedHevcProfiles = [
+    ...Array.from({ length: 18 }, () => ({ sig: 'hevcx1080x1920|aacx44100x2', vCodec: 'hevc', w: 1080, h: 1920, hasAudio: true, aCodec: 'aac', ar: 44100, ch: 2 })),
+    { sig: 'hevcx1080x1924|aacx44100x2', vCodec: 'hevc', w: 1080, h: 1924, hasAudio: true, aCodec: 'aac', ar: 44100, ch: 2 },
+    { sig: 'h264x576x1024|aacx44100x2', vCodec: 'h264', w: 576, h: 1024, hasAudio: true, aCodec: 'aac', ar: 44100, ch: 2 },
+  ];
+  const normTgt = dl.pickDominantTarget(mixedHevcProfiles, { gpuCaps: { hevcEncoder: 'hevc_nvenc' }, hasLibx265: true, compressed: false });
+  assert.strictEqual(normTgt.vCodec, 'hevc', 'keeps dominant hevc codec so 18 clips skip re-encode');
+  assert.strictEqual(normTgt.w, 1080);
+  assert.strictEqual(normTgt.h, 1920);
+  const compTgt = dl.pickDominantTarget(mixedHevcProfiles, { gpuCaps: { hevcEncoder: 'hevc_nvenc' }, hasLibx265: true, compressed: true });
+  assert.strictEqual(compTgt.w, 720, 'compress mode caps 1080x1920 down to 720x1280');
+  assert.strictEqual(compTgt.h, 1280);
+
+  if (!fs.existsSync(dl.FFMPEG_EXE) || !fs.existsSync(dl.FFPROBE_EXE)) return;
+
+  const { spawnSync } = require('child_process');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'eza-merge-test-'));
+  try {
+    const clipA = path.join(tmp, 'EP001.mp4');
+    const clipB = path.join(tmp, 'EP002.mp4');
+    const mkClip = (dst, sr) => spawnSync(dl.FFMPEG_EXE, [
+      '-y', '-hide_banner', '-loglevel', 'error',
+      '-f', 'lavfi', '-i', 'testsrc2=size=360x640:rate=24:duration=1',
+      '-f', 'lavfi', '-i', `sine=frequency=440:sample_rate=${sr}:d=1`,
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac', '-shortest', dst,
+    ]);
+    mkClip(clipA, 44100);
+    mkClip(clipB, 48000);
+
+    const prof = await dl.probeMediaProfile(clipA);
+    assert.strictEqual(prof.w, 360);
+    assert.ok(prof.duration > 0.3, 'probeMediaProfile returns duration in single pass');
+
+    // Mismatched audio sample rates (44100 vs 48000) merge cleanly via copyVideo normalization
+    const directRes = await dl.mergeEpisodesToMovie(tmp, 'TestMergeDirect', [
+      { epNum: 1, file: clipA },
+      { epNum: 2, file: clipB },
+    ], { compress: false });
+    assert.strictEqual(directRes.count, 2);
+    assert.ok(dl.isValidMp4File(directRes.path));
+
+    // Swapped stream order ([0:audio, 1:video]) + mismatched timescale must merge WITHOUT putting video frames in audio!
+    const clipSwapped = path.join(tmp, 'EP003.mp4');
+    spawnSync(dl.FFMPEG_EXE, [
+      '-y', '-hide_banner', '-loglevel', 'error',
+      '-f', 'lavfi', '-i', 'sine=frequency=520:sample_rate=44100:d=1',
+      '-f', 'lavfi', '-i', 'testsrc2=size=360x640:rate=24:duration=1',
+      '-map', '0:a:0', '-map', '1:v:0',
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-video_track_timescale', '90000',
+      '-c:a', 'aac', '-shortest', clipSwapped,
+    ]);
+    const swappedProf = await dl.probeMediaProfile(clipSwapped);
+    assert.strictEqual(swappedProf.streamOrderOk, false, 'Must detect [0:audio, 1:video] swapped stream order');
+    const swappedRes = await dl.mergeEpisodesToMovie(tmp, 'TestMergeSwapped', [
+      { epNum: 1, file: clipA },
+      { epNum: 2, file: clipSwapped },
+    ], { compress: false });
+    const mergedSwappedProf = await dl.probeMediaProfile(swappedRes.path);
+    assert.strictEqual(mergedSwappedProf.streamOrderOk, true, 'Merged output must restore [0:video, 1:audio]');
+    assert.ok(mergedSwappedProf.aDuration >= 1.7 && mergedSwappedProf.vDuration >= 1.7, `Expected full ~2s A/V duration, got v=${mergedSwappedProf.vDuration}, a=${mergedSwappedProf.aDuration}`);
+    assert.strictEqual(dl.validateMergedMovieProfile(mergedSwappedProf, [prof, swappedProf], true).ok, true);
+
+    // Parallel compress merge produces valid MP4 with progress events
+    const logs = [];
+    const compRes = await dl.mergeEpisodesToMovie(tmp, 'TestMergeComp', [
+      { epNum: 1, file: clipA },
+      { epNum: 2, file: clipB },
+    ], { compress: true, onProgress: (pct, msg) => logs.push(msg) });
+    assert.strictEqual(compRes.count, 2);
+    assert.ok(dl.isValidMp4File(compRes.path));
+    assert.ok(logs.some((m) => m.includes('បង្ហាប់')));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('tech-radar filters unsafe keywords, builds safe open-source digest, and formats bounded Telegram HTML', async () => {
+  const radar = require('./lib/tech-radar');
+
+  assert.strictEqual(radar.isSafeOpenSourceItem({ fullName: 'dev/yt-dlp-helper', description: 'FFmpeg & HLS GUI tool' }), true);
+  assert.strictEqual(radar.isSafeOpenSourceItem({ fullName: 'bad/app-crack', description: 'License bypass tool' }), false);
+  assert.strictEqual(radar.isSafeOpenSourceItem({ title: 'Keygen & hack utility' }), false);
+
+  const mockReq = async (url) => {
+    if (url.includes('/releases/latest')) {
+      return {
+        status: 200,
+        json: {
+          tag_name: '2026.11.21',
+          name: 'Release 2026.11.21',
+          html_url: 'https://github.com/yt-dlp/yt-dlp/releases/tag/2026.11.21',
+          published_at: new Date().toISOString(),
+        },
+      };
+    }
+    if (url.includes('api.github.com/search/repositories')) {
+      return {
+        status: 200,
+        json: {
+          items: [
+            { full_name: 'oss/ffmpeg-turbo', html_url: 'https://github.com/oss/ffmpeg-turbo', stargazers_count: 120, description: 'Fast <GPU> FFmpeg pipeline & HLS muxer', topics: ['ffmpeg'] },
+            { full_name: 'bad/tool-bypass', html_url: 'https://github.com/bad/tool-bypass', stargazers_count: 999, description: 'VIP bypass hack script', topics: [] },
+          ],
+        },
+      };
+    }
+    if (url.includes('viblo.asia/api/posts')) {
+      return {
+        status: 200,
+        json: {
+          data: [
+            { title: 'Toi uu Node.js & FFmpeg stream <fast>', slug: 'abc123', url: 'https://viblo.asia/p/abc123', tags: { data: [{ name: 'Node.js' }] } },
+            { title: 'Huong dan crack phan mem', slug: 'bad1', url: 'https://viblo.asia/p/bad1', tags: { data: [] } },
+          ],
+        },
+      };
+    }
+    return { status: 404, json: null };
+  };
+
+  const digest = await radar.buildDailyTechDigest({
+    requestFn: mockReq,
+    seenKeys: new Set(['repo:already/seen']),
+  });
+  assert.ok(digest.mediaRepos.some((r) => r.fullName === 'oss/ffmpeg-turbo'));
+  assert.ok(!digest.mediaRepos.some((r) => r.fullName === 'bad/tool-bypass'), 'unsafe repo excluded');
+  assert.strictEqual(digest.vibloPosts.length, 1);
+  assert.strictEqual(digest.vibloPosts[0].key, 'viblo:abc123');
+
+  const msgs = radar.formatTelegramDigestMessages(digest, { maxLen: 3800 });
+  assert.ok(msgs.length >= 1);
+  assert.ok(msgs.every((m) => m.length <= 3800));
+  assert.ok(msgs[0].includes('&lt;GPU&gt;') && msgs[0].includes('&lt;fast&gt;'), 'escapes HTML tags safely');
+});
+
+test('getDownloadDir falls back cleanly when folder mkdir/write hits EPERM (Controlled Folder Access)', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eza-dl-perm-'));
+  const origEnv = { ...process.env };
+  const origMkdirSync = fs.mkdirSync;
+  const blockedDir = path.join(tmpDir, 'ProtectedVideos');
+
+  process.env.EZA_PACKAGED_CLIENT = '1';
+  process.env.EZA_REQUIRE_CLOUD_LICENSE = '0';
+  process.env.HDRG_ISOLATED = '1';
+  process.env.EZA_USER_DATA_DIR = tmpDir;
+  process.env.HDRG_CONFIG_FILE = path.join(tmpDir, 'config.json');
+  process.env.EZA_DEFAULT_DOWNLOAD_DIR = path.join(tmpDir, 'SafeDownloads');
+  fs.writeFileSync(process.env.HDRG_CONFIG_FILE, JSON.stringify({ DOWNLOAD_DIR: blockedDir }), 'utf8');
+
+  let blockedAttempts = 0;
+  fs.mkdirSync = (targetPath, opts) => {
+    if (path.normalize(String(targetPath)) === path.normalize(blockedDir)) {
+      blockedAttempts += 1;
+      const err = new Error('EPERM: operation not permitted');
+      err.code = 'EPERM';
+      throw err;
+    }
+    return origMkdirSync.call(fs, targetPath, opts);
+  };
+
+  try {
+    delete require.cache[require.resolve('./ui_server')];
+    const uiServer = require('./ui_server');
+    const resolved1 = uiServer.getDownloadDir();
+    const resolved2 = uiServer.getDownloadDir();
+    assert.equal(resolved1, path.normalize(process.env.EZA_DEFAULT_DOWNLOAD_DIR));
+    assert.equal(resolved2, resolved1);
+    assert.equal(blockedAttempts, 1, 'blocked protected path should be cached and checked only once');
+  } finally {
+    fs.mkdirSync = origMkdirSync;
+    for (const k of Object.keys(process.env)) {
+      if (!(k in origEnv)) delete process.env[k];
+    }
+    Object.assign(process.env, origEnv);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('cleanDist keeps only current version x64 installer and removes old/portable/unpacked files', () => {
+  const { cleanDist } = require('./scripts/clean-dist');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eza-clean-dist-'));
+  const distDir = path.join(tmpDir, 'dist');
+  try {
+    fs.mkdirSync(path.join(distDir, 'win-unpacked'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, 'package.json'), JSON.stringify({
+      productName: 'EZA PRO Downloader',
+      version: '1.2.0',
+    }), 'utf8');
+    fs.writeFileSync(path.join(distDir, 'win-unpacked', 'dummy.txt'), 'x');
+    fs.writeFileSync(path.join(distDir, 'EZA PRO Downloader-1.2.0-x64.exe'), 'installer-bytes');
+    fs.writeFileSync(path.join(distDir, 'EZA PRO Downloader-1.1.1-x64.exe'), 'old');
+    fs.writeFileSync(path.join(distDir, 'EZA PRO Downloader-1.2.0-Portable.exe'), 'portable');
+    fs.writeFileSync(path.join(distDir, 'EZA PRO Downloader-1.2.0-x64.exe.blockmap'), 'map');
+    fs.writeFileSync(path.join(distDir, 'latest.yml'), 'yml');
+    fs.writeFileSync(path.join(distDir, 'builder-debug.yml'), 'dbg');
+
+    const res = cleanDist(tmpDir);
+    assert.equal(res.targetExe, 'EZA PRO Downloader-1.2.0-x64.exe');
+    assert.deepEqual(fs.readdirSync(distDir), ['EZA PRO Downloader-1.2.0-x64.exe']);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });

@@ -20,13 +20,55 @@ const dl = require('./lib/downloader');
 const sources = require('./lib/sources');
 const ytdlp = require('./lib/ytdlp');
 const upstreamWatcher = require('./lib/upstream-watcher');
-let lastNotifiedUpstreamSig = '';
 
 const PORT = Number(process.env.HDRG_PORT || 3000);
 const IS_PACKAGED_CLIENT = process.env.EZA_PACKAGED_CLIENT === '1';
+const APP_VERSION = (() => {
+  try {
+    return require('./package.json').version || '1.1.1';
+  } catch (_) {
+    return '1.1.1';
+  }
+})();
+
+let upstreamWatcherTimer = null;
+let upstreamBootTimer = null;
+let upstreamNotifyInflight = null;
+let lastNotifiedUpstreamSig = '';
+
+async function maybeNotifyUpstreamTelegram(report) {
+  if (IS_PACKAGED_CLIENT || !report || !report.hasUpdates) return false;
+  const sig = upstreamWatcher.buildUpdateSignature(report);
+  if (!sig) return false;
+  const cfg = loadConfig();
+  const prevSig = lastNotifiedUpstreamSig || cfg.LAST_UPSTREAM_NOTIFIED_SIG || '';
+  if (sig === prevSig) return false;
+  if (upstreamNotifyInflight) return upstreamNotifyInflight;
+  upstreamNotifyInflight = (async () => {
+    const tgCfg = upstreamWatcher.loadTelegramConfigFromEnvFile();
+    if (!tgCfg.botToken || !tgCfg.chatId) return false;
+    try {
+      const res = await upstreamWatcher.sendTelegramAlert({
+        botToken: tgCfg.botToken,
+        chatId: tgCfg.chatId,
+        message: upstreamWatcher.formatTelegramMessage(report, 'koeurnDev/RG'),
+      });
+      if (res && res.sent) {
+        lastNotifiedUpstreamSig = sig;
+        try { saveConfig({ LAST_UPSTREAM_NOTIFIED_SIG: sig }); } catch (_) {}
+        console.log(`[Upstream Watcher] Sent Telegram update alert (messageId=${res.messageId || '?'})`);
+        return true;
+      }
+    } catch (err) {
+      console.error('[Upstream Watcher] Telegram send failed:', err.message);
+    }
+    return false;
+  })().finally(() => { upstreamNotifyInflight = null; });
+  return upstreamNotifyInflight;
+}
 const DEFAULT_DOWNLOAD_DIR =
   process.env.EZA_DEFAULT_DOWNLOAD_DIR ||
-  (IS_PACKAGED_CLIENT ? path.join(os.homedir(), 'Videos', 'EZA PRO Downloader') : 'D:\\HDRG');
+  (IS_PACKAGED_CLIENT ? path.join(os.homedir(), 'Downloads', 'EZA PRO Downloader') : 'D:\\HDRG');
 const PUBLIC_HTML = path.join(__dirname, 'public', 'index.html');
 const CONFIG_FILE =
   process.env.HDRG_CONFIG_FILE ||
@@ -38,7 +80,7 @@ let progressClients = [];
 const jobsMap = new Map(); // jobId -> job
 const ACTIVE_JOB_STATUSES = new Set(['starting', 'running', 'retrying', 'merging']);
 const MAX_JOB_HISTORY = 30;
-const GLOBAL_DOWNLOAD_SEM = dl.createSemaphore(24);
+const GLOBAL_DOWNLOAD_SEM = dl.createSemaphore(36);
 const GLOBAL_BYTEVC2_SEM = dl.createSemaphore((os.cpus().length || 4) >= 6 ? 2 : 1);
 const dramaCache = new Map(); // sid -> { timestamp, data }
 const DRAMA_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -102,18 +144,69 @@ function loadConfig() {
       if (parsed.GEMINI_API_KEY) cfg.GEMINI_API_KEY = parsed.GEMINI_API_KEY;
       if (parsed.DRAMABOX_VIP_TOKEN) cfg.DRAMABOX_VIP_TOKEN = parsed.DRAMABOX_VIP_TOKEN;
       if (Array.isArray(parsed.CUSTOM_SOURCES)) cfg.CUSTOM_SOURCES = parsed.CUSTOM_SOURCES;
+      if (parsed.LAST_UPSTREAM_NOTIFIED_SIG) cfg.LAST_UPSTREAM_NOTIFIED_SIG = parsed.LAST_UPSTREAM_NOTIFIED_SIG;
     }
   } catch (_) {}
   return cfg;
 }
 
+const blockedDownloadDirs = new Set();
+const verifiedDownloadDirs = new Set();
+
+function resolveSafeFallbackDownloadDir() {
+  const downloadsCandidate = IS_PACKAGED_CLIENT
+    ? path.join(os.homedir(), 'Downloads', 'EZA PRO Downloader')
+    : 'D:\\HDRG';
+  const userDataDir = process.env.EZA_USER_DATA_DIR || path.dirname(CONFIG_FILE);
+  const appDataFallback = path.join(userDataDir, 'Downloads');
+  for (const cand of [process.env.EZA_DEFAULT_DOWNLOAD_DIR, downloadsCandidate, appDataFallback].filter(Boolean)) {
+    const norm = path.normalize(cand);
+    if (!blockedDownloadDirs.has(norm) && canWriteToDir(norm)) return norm;
+  }
+  return appDataFallback;
+}
+
+function canWriteToDir(dir) {
+  if (!dir) return false;
+  const norm = path.normalize(dir);
+  if (verifiedDownloadDirs.has(norm)) {
+    if (fs.existsSync(norm)) return true;
+    verifiedDownloadDirs.delete(norm);
+  }
+  if (blockedDownloadDirs.has(norm)) return false;
+  try {
+    if (!fs.existsSync(norm)) fs.mkdirSync(norm, { recursive: true });
+    const probe = path.join(norm, `.eza-write-${process.pid}.tmp`);
+    fs.writeFileSync(probe, '');
+    fs.unlinkSync(probe);
+    verifiedDownloadDirs.add(norm);
+    return true;
+  } catch (err) {
+    if (err && (err.code === 'EPERM' || err.code === 'EACCES' || err.code === 'EROFS')) {
+      blockedDownloadDirs.add(norm);
+      console.warn(`[Storage] Protected or unwritable folder blocked: ${norm} (${err.code})`);
+    }
+    return false;
+  }
+}
+
 function getDownloadDir() {
   const cfg = loadConfig();
-  const dir = cfg.DOWNLOAD_DIR || DEFAULT_DOWNLOAD_DIR;
-  try {
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  } catch (_) {}
-  return dir;
+  const dir = path.normalize(cfg.DOWNLOAD_DIR || DEFAULT_DOWNLOAD_DIR);
+  if (canWriteToDir(dir)) return dir;
+  return resolveSafeFallbackDownloadDir();
+}
+
+function setValidatedDownloadDir(rawPath) {
+  if (!rawPath || typeof rawPath !== 'string') throw new Error('ទីតាំងមិនត្រឹមត្រូវ');
+  const clean = path.normalize(rawPath.trim());
+  blockedDownloadDirs.delete(clean);
+  verifiedDownloadDirs.delete(clean);
+  if (!canWriteToDir(clean)) {
+    throw new Error('Windows Security (Controlled Folder Access) ឬ សិទ្ធិថត បានរារាំងការសរសេរទៅទីតាំងនេះ! សូមជ្រើសថតក្នុង Downloads ឬ Drive ផ្សេង (ឧ. D:\\)');
+  }
+  saveConfig({ DOWNLOAD_DIR: clean });
+  return clean;
 }
 
 function saveConfig(cfg) {
@@ -1430,7 +1523,7 @@ function cancelAllActiveJobs(reasonMsg = '🛑 បានបញ្ឈប់កា
 
 // ===== Turbo Batch Download Engine with Auto-Retry & ByteVC2 Support =====
 async function runBatchDownload(job) {
-  const { seriesId, selectedEps, autoMerge, compressMerge = false, workers = 8, qualityMode = '1080p' } = job;
+  const { seriesId, selectedEps, autoMerge, compressMerge = false, workers = 12, qualityMode = 'fast' } = job;
   const signal = job.abortController.signal;
 
   // Rolling 2.5s byte window for accurate live MB/s measurement
@@ -1505,12 +1598,15 @@ async function runBatchDownload(job) {
       job.episodeStates[num] = { status: 'queued', percent: 0, text: 'រង់ចាំ...' };
     }
 
-    const activeConcurrency = Math.min(Math.max(1, Number(workers) || 8), targetNums.length);
+    const activeConcurrency = Math.min(Math.max(1, Number(workers) || 12), targetNums.length);
     job.workers = activeConcurrency;
     const bytevc2Sem = GLOBAL_BYTEVC2_SEM;
+    if (dl.isAria2Available()) {
+      dl.ensureAria2Daemon().catch(() => {});
+    }
 
     job.progress = 5;
-    job.message = `🚀 ចាប់ផ្ដើមទាញយក ${targetNums.length} ភាគ (${activeConcurrency} Threads • ${qualityMode === 'fast' ? '⚡ Fast Hybrid' : '💎 1080p HD'})`;
+    job.message = `🚀 ចាប់ផ្ដើមទាញយក ${targetNums.length} ភាគ (${activeConcurrency} Threads • ${qualityMode === 'fast' ? '⚡ 1080p Smart HD' : qualityMode === '720p' ? '📱 720p Eco' : '💎 1080p HD'})`;
     pushJobLog(job, job.message);
     emitSnapshot(job, true);
 
@@ -1536,16 +1632,15 @@ async function runBatchDownload(job) {
       return p;
     }
 
-    // Rolling prefetcher (batch 12/call for HongGuo, 6 concurrent resolvers for DramaBox/ReelShort/Hema/Xifan)
-    const PREFETCH_BATCH_HONGGUO = 12;
-    const PREFETCH_BATCH_OTHER = 6;
+    // Rolling prefetcher (batch 20/call for HongGuo, 12-worker sliding lookahead for DramaBox/ReelShort/Hema/Xifan)
+    const PREFETCH_BATCH_HONGGUO = 20;
+    const PREFETCH_CONC_OTHER = 12;
     let prefetchCursor = 0;
     let activeQueueCursor = 0;
 
     async function prefetchNextBatch(epList) {
-      const batchSize = sourceTag === 'hongguo' ? PREFETCH_BATCH_HONGGUO : PREFETCH_BATCH_OTHER;
       const batchItems = [];
-      while (prefetchCursor < epList.length && batchItems.length < batchSize) {
+      while (prefetchCursor < epList.length && batchItems.length < PREFETCH_BATCH_HONGGUO) {
         const item = epList[prefetchCursor++];
         if (!item || item.epData?.locked || playUrlMap.has(item.epNum) || completedMap.has(item.epNum)) continue;
         const existing = dl.findExistingEpisodeFile(outputDir, cleanTitle, item.epNum, totalDramaEps);
@@ -1553,32 +1648,45 @@ async function runBatchDownload(job) {
         batchItems.push(item);
       }
       if (!batchItems.length) return false;
-      if (sourceTag === 'hongguo') {
-        const resolvedMap = await dl.resolveBatchPlayInfos(batchItems, { qualityMode, signal });
-        for (const [epNum, resolvedInfo] of resolvedMap.entries()) {
-          playUrlMap.set(epNum, resolvedInfo);
-        }
-      } else {
-        await Promise.allSettled(
-          batchItems.map((item) => getPlayInfoCached(item.epNum, item.epData).catch(() => null))
-        );
+      const resolvedMap = await dl.resolveBatchPlayInfos(batchItems, { qualityMode, signal });
+      for (const [epNum, resolvedInfo] of resolvedMap.entries()) {
+        playUrlMap.set(epNum, resolvedInfo);
       }
       return true;
     }
 
-    const startPrefetchLoop = (epList) => (async () => {
-      while (prefetchCursor < epList.length) {
-        if (job.cancelled || signal.aborted) return;
-        if (prefetchCursor - activeQueueCursor > 18) {
-          await dl.sleep(200, signal);
-          continue;
-        }
-        const ok = await prefetchNextBatch(epList);
-        if (!ok && prefetchCursor < epList.length) {
-          await dl.sleep(100, signal);
-        }
+    const startPrefetchLoop = (epList) => {
+      if (sourceTag === 'hongguo') {
+        return (async () => {
+          while (prefetchCursor < epList.length) {
+            if (job.cancelled || signal.aborted) return;
+            if (prefetchCursor - activeQueueCursor > 36) {
+              await dl.sleep(120, signal);
+              continue;
+            }
+            const ok = await prefetchNextBatch(epList);
+            if (!ok && prefetchCursor < epList.length) {
+              await dl.sleep(80, signal);
+            }
+          }
+        })();
       }
-    })();
+      const preWorker = async () => {
+        while (prefetchCursor < epList.length) {
+          if (job.cancelled || signal.aborted) return;
+          if (prefetchCursor - activeQueueCursor > 28) {
+            await dl.sleep(100, signal);
+            continue;
+          }
+          const item = epList[prefetchCursor++];
+          if (!item || item.epData?.locked || playUrlMap.has(item.epNum) || completedMap.has(item.epNum)) continue;
+          const existing = dl.findExistingEpisodeFile(outputDir, cleanTitle, item.epNum, totalDramaEps);
+          if (existing && dl.isValidMp4File(existing)) continue;
+          await getPlayInfoCached(item.epNum, item.epData).catch(() => null);
+        }
+      };
+      return Promise.all(Array.from({ length: Math.min(PREFETCH_CONC_OTHER, epList.length) }, () => preWorker()));
+    };
 
     function updateOverallProgress() {
       const done = completedMap.size;
@@ -1697,29 +1805,21 @@ async function runBatchDownload(job) {
               }
             }
 
-            if (dl.isAria2Available()) {
-              try {
-                await dl.downloadWithAria2(variant, tempEnc, {
-                  signal,
-                  activeChildren: job.activeChildren,
-                  onBytesProgress: (delta, dlPct) => {
-                    recordBytes(delta);
-                    const scaledPct = Math.min(54, 12 + Math.round(dlPct * 0.42));
-                    job.episodeStates[epNum] = { status: 'downloading', percent: scaledPct, text: `⚡ 16x ${dlPct}%` };
-                    updateOverallProgress();
-                    emitSnapshot(job, false);
-                  },
-                });
-                downloadedVariant = variant;
-                break;
-              } catch (ariaErr) {
-                if (job.cancelled || signal.aborted || ariaErr.message === 'CANCELLED') return;
-                lastDlError = ariaErr;
-                try { if (fs.existsSync(tempEnc)) fs.unlinkSync(tempEnc); } catch (_) {}
-              }
-            }
-
-            try {
+            const preferDirectStream = sourceTag === 'dramabox' || variant.source === 'dramabox';
+            const tryAria2Fn = async () => {
+              await dl.downloadWithAria2(variant, tempEnc, {
+                signal,
+                activeChildren: job.activeChildren,
+                onBytesProgress: (delta, dlPct) => {
+                  recordBytes(delta);
+                  const scaledPct = Math.min(54, 12 + Math.round(dlPct * 0.42));
+                  job.episodeStates[epNum] = { status: 'downloading', percent: scaledPct, text: `⚡ 8x ${dlPct}%` };
+                  updateOverallProgress();
+                  emitSnapshot(job, false);
+                },
+              });
+            };
+            const tryStreamFn = async () => {
               await dl.downloadUrlStream(variant, tempEnc, {
                 signal,
                 onBytesProgress: (delta, dlPct) => {
@@ -1730,12 +1830,39 @@ async function runBatchDownload(job) {
                   emitSnapshot(job, false);
                 },
               });
+            };
+
+            if (!preferDirectStream && dl.isAria2Available()) {
+              try {
+                await tryAria2Fn();
+                downloadedVariant = variant;
+                break;
+              } catch (ariaErr) {
+                if (job.cancelled || signal.aborted || ariaErr.message === 'CANCELLED') return;
+                lastDlError = ariaErr;
+                try { if (fs.existsSync(tempEnc)) fs.unlinkSync(tempEnc); } catch (_) {}
+              }
+            }
+
+            try {
+              await tryStreamFn();
               downloadedVariant = variant;
               break;
             } catch (streamErr) {
               if (job.cancelled || signal.aborted || streamErr.message === 'CANCELLED') return;
               lastDlError = streamErr;
               try { if (fs.existsSync(tempEnc)) fs.unlinkSync(tempEnc); } catch (_) {}
+              if (preferDirectStream && dl.isAria2Available()) {
+                try {
+                  await tryAria2Fn();
+                  downloadedVariant = variant;
+                  break;
+                } catch (ariaErr2) {
+                  if (job.cancelled || signal.aborted || ariaErr2.message === 'CANCELLED') return;
+                  lastDlError = ariaErr2;
+                  try { if (fs.existsSync(tempEnc)) fs.unlinkSync(tempEnc); } catch (_) {}
+                }
+              }
               // On last variant or HTTP failure, try curl.exe fallback once for that variant
               if (vi === variants.length - 1) {
                 try {
@@ -1823,7 +1950,9 @@ async function runBatchDownload(job) {
     async function runWorkerWave(epList, concurrency, isRetryPass = false) {
       activeQueueCursor = 0;
       prefetchCursor = 0;
-      await prefetchNextBatch(epList);
+      if (sourceTag === 'hongguo') {
+        await prefetchNextBatch(epList);
+      }
       if (job.cancelled || signal.aborted) return;
       const prefetcherPromise = startPrefetchLoop(epList);
       const worker = async () => {
@@ -2157,6 +2286,7 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, {
       success: true,
       isPackagedClient: IS_PACKAGED_CLIENT,
+      appVersion: APP_VERSION,
       machineId,
       cloudLicenseEnforced: cloudEnforced,
       licensed: cloudEnforced ? Boolean(summary && summary.licensed) : true,
@@ -2192,15 +2322,10 @@ const server = http.createServer(async (req, res) => {
 
     const machineId = cloudLicense.getMachineHardwareId();
     const providedCode = typeof body.code === 'string' ? body.code.trim() : '';
-    let appVersion = '1.0.0';
-    try {
-      appVersion = require('./package.json').version || '1.0.0';
-    } catch (_) {}
-
     const result = await cloudLicense.verifyCloudLicenseKey({
       licenseKey: providedCode,
       machineId,
-      appVersion,
+      appVersion: APP_VERSION,
     });
 
     if (!result.valid) {
@@ -2264,7 +2389,7 @@ const server = http.createServer(async (req, res) => {
 
   // Config API
   if (url.pathname === '/api/config' && req.method === 'GET') {
-    return sendJson(res, { hasKey: false, maskedKey: '' });
+    return sendJson(res, { hasKey: false, maskedKey: '', version: APP_VERSION });
   }
 
   if (url.pathname === '/api/config' && req.method === 'POST') {
@@ -2484,18 +2609,7 @@ const server = http.createServer(async (req, res) => {
       const force = url.searchParams.get('refresh') === '1';
       const report = await upstreamWatcher.checkAllUpstreams({ force });
       if (!IS_PACKAGED_CLIENT && report.hasUpdates) {
-        const sig = upstreamWatcher.buildUpdateSignature(report);
-        if (sig && sig !== lastNotifiedUpstreamSig) {
-          const tgCfg = upstreamWatcher.loadTelegramConfigFromEnvFile();
-          if (tgCfg.botToken && tgCfg.chatId) {
-            lastNotifiedUpstreamSig = sig;
-            upstreamWatcher.sendTelegramAlert({
-              botToken: tgCfg.botToken,
-              chatId: tgCfg.chatId,
-              message: upstreamWatcher.formatTelegramMessage(report, 'koeurnDev/RG'),
-            }).catch(() => {});
-          }
-        }
+        maybeNotifyUpstreamTelegram(report).catch(() => {});
       }
       return sendJson(res, { success: true, ...report });
     } catch (err) {
@@ -3055,7 +3169,7 @@ const server = http.createServer(async (req, res) => {
         total: estTotal,
         completed: 0,
         failed: 0,
-        workers: Number(workers) || 8,
+        workers: Number(workers) || 12,
         qualityMode: ['fast', '1080p', '720p'].includes(qualityMode) ? qualityMode : 'fast',
         autoMerge: Boolean(autoMerge),
         compressMerge: Boolean(compressMerge),
@@ -3416,10 +3530,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST') {
       try {
         const { path: newPath } = await readJsonBody(req);
-        if (!newPath || typeof newPath !== 'string') throw new Error('ទីតាំងមិនត្រឹមត្រូវ');
-        const clean = path.normalize(newPath.trim());
-        if (!fs.existsSync(clean)) fs.mkdirSync(clean, { recursive: true });
-        saveConfig({ DOWNLOAD_DIR: clean });
+        const clean = setValidatedDownloadDir(newPath);
         return sendJson(res, { success: true, path: clean });
       } catch (e) {
         return sendJson(res, { success: false, error: e.message });
@@ -3510,9 +3621,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const chosen = await promptFolderPicker(getDownloadDir());
       if (chosen) {
-        const clean = path.normalize(chosen.trim());
-        if (!fs.existsSync(clean)) fs.mkdirSync(clean, { recursive: true });
-        saveConfig({ DOWNLOAD_DIR: clean });
+        const clean = setValidatedDownloadDir(chosen);
         return sendJson(res, { success: true, path: clean });
       }
       return sendJson(res, { success: false, cancelled: true });
@@ -3667,6 +3776,17 @@ function runBackgroundWarmup() {
       }
     }
   })();
+  if (!IS_PACKAGED_CLIENT && !upstreamWatcherTimer) {
+    const runQuietUpstreamWatch = (force = false) => {
+      upstreamWatcher.checkAllUpstreams({ force })
+        .then((rep) => maybeNotifyUpstreamTelegram(rep))
+        .catch(() => {});
+    };
+    upstreamBootTimer = setTimeout(() => runQuietUpstreamWatch(false), 6000);
+    upstreamBootTimer.unref?.();
+    upstreamWatcherTimer = setInterval(() => runQuietUpstreamWatch(true), 60 * 60 * 1000);
+    upstreamWatcherTimer.unref?.();
+  }
 }
 
 function startServer({ port = PORT, host = '127.0.0.1', warmUp = true } = {}) {
@@ -3701,6 +3821,8 @@ function startServer({ port = PORT, host = '127.0.0.1', warmUp = true } = {}) {
 
 function stopServer() {
   stopCatalogWarmup();
+  if (upstreamBootTimer) { clearTimeout(upstreamBootTimer); upstreamBootTimer = null; }
+  if (upstreamWatcherTimer) { clearInterval(upstreamWatcherTimer); upstreamWatcherTimer = null; }
   try {
     cancelAllActiveJobs('🛑 កម្មវិធីកំពុងបិទ');
   } catch (_) {}

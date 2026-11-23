@@ -1,0 +1,41 @@
+name: Daily Open-Source Tech Radar
+
+on:
+  schedule:
+    # 01:00 UTC = 08:00 AM ICT (Asia/Phnom_Penh) every day
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force send digest even if already sent today'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  tech-radar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Collect daily open-source tech digest and notify Admin Telegram
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            node scripts/daily-tech-radar.js --notify --force
+          else
+            node scripts/daily-tech-radar.js --notify
+          fi

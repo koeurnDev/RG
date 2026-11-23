@@ -1,28 +1,28 @@
 {
-  "updatedAt": "2026-11-21T13:11:10.117Z",
+  "updatedAt": "2026-11-23T18:16:00.000Z",
   "repos": {
     "jackotom/hongguo-drama": {
       "label": "HongGuo Drama (Core Native)",
       "branch": "main",
       "commitPath": "src/native",
-      "syncedSha": "92df757ed7be8ea658ee274a6a429b77f49e54e8",
-      "syncedRelease": "7.8",
+      "syncedSha": "ba1fd443f0e1e94bc6cbcbf4bd99459339a2a287",
+      "syncedRelease": "v8.0",
       "trackLatestRelease": true
     },
     "N3urda/hongguoTV": {
       "label": "HongGuo TV (Protocol Reference)",
       "branch": "main",
       "commitPath": "kotlin-tv/core",
-      "syncedSha": "0646a060d9501e40220328bc2dd39afe39087124",
-      "syncedRelease": "kotlin-v0.16.11",
+      "syncedSha": "ac3a1e2e866b2a917651575ba507adfe62344932",
+      "syncedRelease": "kotlin-v0.16.13",
       "trackLatestRelease": true
     },
     "ch6vip/novel-sound": {
       "label": "Novel Sound (V5 Reference)",
       "branch": "master",
       "commitPath": "rust/src",
-      "syncedSha": "dde67f67a985197c8bbb3029514b757ff0ceab56",
-      "syncedRelease": "1.0.205",
+      "syncedSha": "17c7f5f622351f375866dca2193681c1a6fa9f72",
+      "syncedRelease": "v1.0.205",
       "trackLatestRelease": true
     }
   }

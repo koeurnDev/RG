@@ -42,8 +42,10 @@ async function notifyIfNew(report) {
   const tgToken = tgCfg.botToken;
   const tgChatId = tgCfg.chatId;
 
-  let alreadyNotified = false;
+  let issueAlreadyNotified = false;
+  let telegramAlreadyNotified = false;
   let existingIssueNumber = null;
+  let existingIssueBody = '';
 
   if (ghToken && ghRepo) {
     const issuesRes = await ghApi(`/repos/${ghRepo}/issues?state=open&per_page=30`, { token: ghToken });
@@ -51,54 +53,70 @@ async function notifyIfNew(report) {
       const existing = issuesRes.json.find((iss) => String(iss.title || '').startsWith('[Upstream Update]'));
       if (existing) {
         existingIssueNumber = existing.number;
-        const body = String(existing.body || '');
-        if (body.includes(`<!-- upstream-shas:${signature} -->`)) {
-          alreadyNotified = true;
+        existingIssueBody = String(existing.body || '');
+        if (existingIssueBody.includes(`<!-- upstream-shas:${signature} -->`)) {
+          issueAlreadyNotified = true;
+        }
+        if (existingIssueBody.includes(`<!-- telegram-sent:${signature} -->`)) {
+          telegramAlreadyNotified = true;
         }
       }
     }
   }
 
-  if (alreadyNotified) {
-    console.log(`Already notified for signature: ${signature}`);
-    return { notified: false, reason: 'already_notified', signature };
+  let tgSentNow = false;
+  if (!telegramAlreadyNotified) {
+    if (tgToken && tgChatId) {
+      const msg = watcher.formatTelegramMessage(report, ghRepo || 'koeurnDev/RG');
+      const tgRes = await watcher.sendTelegramAlert({ botToken: tgToken, chatId: tgChatId, message: msg });
+      tgSentNow = Boolean(tgRes && tgRes.sent);
+      console.log(`Sent Telegram alert (messageId=${tgRes.messageId})`);
+    } else {
+      console.log('Telegram alert skipped (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID secrets not configured).');
+    }
   }
 
   if (ghToken && ghRepo) {
     const updatedNames = report.repos.filter((r) => r.hasUpdate).map((r) => r.repo).join(', ');
     const title = `[Upstream Update] ${updatedNames}`;
-    const body = watcher.formatGithubIssueBody(report);
-    if (existingIssueNumber) {
+    const tgMarker = (tgSentNow || telegramAlreadyNotified) ? `\n<!-- telegram-sent:${signature} -->` : '';
+    const body = watcher.formatGithubIssueBody(report) + tgMarker;
+    if (!issueAlreadyNotified) {
+      if (existingIssueNumber) {
+        await ghApi(`/repos/${ghRepo}/issues/${existingIssueNumber}`, {
+          method: 'PATCH',
+          token: ghToken,
+          body: { title, body },
+        });
+        await ghApi(`/repos/${ghRepo}/issues/${existingIssueNumber}/comments`, {
+          method: 'POST',
+          token: ghToken,
+          body: { body: `🔄 Detected newer upstream update (\`${signature}\`). Issue description updated.` },
+        });
+        console.log(`Updated GitHub issue #${existingIssueNumber}`);
+      } else {
+        const created = await ghApi(`/repos/${ghRepo}/issues`, {
+          method: 'POST',
+          token: ghToken,
+          body: { title, body },
+        });
+        console.log(`Created GitHub issue #${created.json?.number || '?'}`);
+      }
+    } else if (tgSentNow && existingIssueNumber) {
       await ghApi(`/repos/${ghRepo}/issues/${existingIssueNumber}`, {
         method: 'PATCH',
         token: ghToken,
         body: { title, body },
       });
-      await ghApi(`/repos/${ghRepo}/issues/${existingIssueNumber}/comments`, {
-        method: 'POST',
-        token: ghToken,
-        body: { body: `🔄 Detected newer upstream update (\`${signature}\`). Issue description updated.` },
-      });
-      console.log(`Updated GitHub issue #${existingIssueNumber}`);
-    } else {
-      const created = await ghApi(`/repos/${ghRepo}/issues`, {
-        method: 'POST',
-        token: ghToken,
-        body: { title, body },
-      });
-      console.log(`Created GitHub issue #${created.json?.number || '?'}`);
     }
   }
 
-  if (tgToken && tgChatId) {
-    const msg = watcher.formatTelegramMessage(report, ghRepo || 'koeurnDev/RG');
-    const tgRes = await watcher.sendTelegramAlert({ botToken: tgToken, chatId: tgChatId, message: msg });
-    console.log(`Sent Telegram alert (messageId=${tgRes.messageId})`);
-  } else {
-    console.log('Telegram alert skipped (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not configured).');
+  if (issueAlreadyNotified && (!tgToken || !tgChatId || telegramAlreadyNotified) && !tgSentNow) {
+    console.log(`Already notified for signature: ${signature}`);
+    return { notified: false, reason: 'already_notified', signature };
   }
 
-  return { notified: true, signature };
+  return { notified: true, signature, telegramSent: tgSentNow };
 }
 
 (async () => {

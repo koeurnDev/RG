@@ -140,6 +140,30 @@ test('EZA PRO Downloader: Cloud License ECDSA signature, appScope guard & anti-b
     assert.equal(offlineOk.valid, true);
     assert.equal(offlineOk.source, 'offline_grace');
 
+    // Outdated version must preserve saved license key so customer does not have to re-type it after updating
+    const outdated = await cloudLicense.verifyCloudLicenseKey({
+      licenseKey: '',
+      machineId,
+      appVersion: '1.1.0',
+      fetchImpl: async () => ({
+        ok: false,
+        status: 426,
+        json: async () => ({
+          success: false,
+          valid: false,
+          reason: 'outdated_version',
+          minAppVersion: '1.1.1',
+          downloadUrl: 'https://downloads.test/downloader-1.1.1.exe',
+          error: 'Please update'
+        })
+      })
+    });
+    assert.equal(outdated.valid, false);
+    assert.equal(outdated.reason, 'outdated_version');
+    assert.equal(outdated.minAppVersion, '1.1.1');
+    assert.equal(outdated.downloadUrl, 'https://downloads.test/downloader-1.1.1.exe');
+    assert.equal(cloudLicense.loadStoredCloudLicenseState().licenseKey, 'EZAPRO-1111-2222-3333-4444');
+
     // Revocation clears lease immediately and re-locks APIs
     const revoked = await cloudLicense.verifyCloudLicenseKey({
       licenseKey: '',

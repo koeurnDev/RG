@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>EZA PRO</title>
+  <title>EZA PRO v1.1.1</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600&family=Kantumruy+Pro:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -165,8 +165,8 @@
 
     .top-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
-    @media (max-width: 760px) {
-      .topbar { height: auto; padding: 10px 14px; flex-wrap: wrap; }
+    @media (max-width: 960px) {
+      .topbar { height: auto; padding: 10px 14px; flex-wrap: wrap; gap: 10px; }
       .search-pill { order: 3; max-width: 100%; width: 100%; flex-basis: 100%; }
     }
 
@@ -174,24 +174,66 @@
     .wrap {
       max-width: 1240px;
       margin: 0 auto;
-      padding: 24px 20px 84px;
+      padding: 24px 20px 108px;
     }
 
     /* VIEW 1: SIMPLE POSTER GRID */
-    .cat-row {
+    .hscroll-wrap {
       display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 20px;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
     }
+    .hscroll-wrap.source-wrap {
+      margin-bottom: 10px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .hscroll-wrap.cat-wrap {
+      flex: 1;
+      min-width: 0;
+    }
+    .hscroll-btn {
+      display: none;
+      flex-shrink: 0;
+      width: 26px;
+      height: 26px;
+      border-radius: 99px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      transition: background 0.14s ease, border-color 0.14s ease;
+    }
+    .hscroll-btn:hover { background: var(--soft-hover); border-color: var(--blue); }
+    .hscroll-btn.show { display: inline-flex; }
+    .cat-row {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: none;
+      gap: 6px;
+      padding: 2px 0;
+      -webkit-overflow-scrolling: touch;
+    }
+    .cat-row::-webkit-scrollbar { display: none; }
     .cat-pill {
       cursor: pointer;
+      flex-shrink: 0;
+      white-space: nowrap;
       border: 1px solid var(--border);
       background: transparent;
       color: var(--muted);
-      padding: 7px 16px;
+      padding: 6px 13px;
       border-radius: 99px;
-      font-size: 13.5px;
+      font-size: 12.5px;
       font-weight: 600;
       transition: all 0.14s ease;
     }
@@ -246,24 +288,34 @@
     .poster-img-box img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .poster-ep-badge {
       position: absolute;
-      bottom: 8px;
-      right: 8px;
+      bottom: 7px;
+      right: 7px;
+      z-index: 2;
+      max-width: calc(100% - 14px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
       background: rgba(11, 15, 23, 0.82);
       backdrop-filter: blur(6px);
       color: #f1f5f9;
-      font-size: 11.5px;
+      font-size: 11px;
       font-weight: 600;
-      padding: 3px 8px;
+      padding: 2px 7px;
       border-radius: 7px;
+      pointer-events: none;
     }
     .poster-new-badge {
       position: absolute;
-      bottom: 8px;
-      left: 8px;
+      bottom: 7px;
+      left: 7px;
       z-index: 2;
-      padding: 3px 7px;
+      max-width: calc(100% - 76px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding: 2px 6px;
       border-radius: 7px;
-      font-size: 11px;
+      font-size: 10.5px;
       font-weight: 700;
       background: rgba(245, 158, 11, 0.92);
       color: #1c1001;
@@ -443,7 +495,10 @@
       z-index: 50;
       display: none;
       align-items: center;
-      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+      max-width: calc(100vw - 24px);
+      gap: 10px;
       padding: 10px 14px 10px 18px;
       background: #172033;
       border: 1px solid rgba(56, 189, 248, 0.45);
@@ -461,6 +516,7 @@
       display: none;
       align-items: center;
       gap: 10px;
+      max-width: calc(100vw - 40px);
       padding: 10px 14px;
       background: #172033;
       border: 1px solid rgba(16, 185, 129, 0.45);
@@ -469,6 +525,7 @@
       cursor: pointer;
     }
     .job-float.show { display: flex; }
+    body.has-bottom-bar .job-float { bottom: 82px; }
 
     /* RANGE POPOVER BAR */
     .range-row {
@@ -523,28 +580,56 @@
     .modal-bg.show { display: flex; }
     .modal {
       width: 100%;
-      max-width: 480px;
+      max-width: 560px;
+      max-height: calc(100vh - 32px);
+      display: flex;
+      flex-direction: column;
       background: var(--card);
       border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 16px;
       box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
       overflow: hidden;
     }
-    .modal.wide { max-width: 540px; }
+    .modal.wide { max-width: 620px; }
     .modal-head {
-      padding: 15px 18px;
+      flex-shrink: 0;
+      padding: 14px 18px;
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: space-between;
       font-weight: 700;
     }
-    .modal-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
-    .modal-foot { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
-    .field { display: flex; flex-direction: column; gap: 6px; }
+    .modal-body {
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 13px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      flex: 1;
+      min-height: 0;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+    }
+    .modal-foot {
+      flex-shrink: 0;
+      padding: 12px 18px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
     .field label { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+    .modal select, .modal input[type="text"], .modal input[type="url"], .modal input[type="number"] {
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
+    }
 
-    video.player { width: 100%; max-height: 70vh; border-radius: 10px; background: #000; }
+    video.player { width: 100%; max-height: 52vh; object-fit: contain; border-radius: 10px; background: #000; }
 
     .fp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
     .fp-chip {
@@ -583,7 +668,8 @@
     .fp-item:hover { background: rgba(56, 189, 248, 0.1); }
     .fp-item:last-child { border-bottom: none; }
 
-    .toast-stack { position: fixed; top: 76px; right: 20px; z-index: 100; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+    .toast-stack { position: fixed; bottom: 20px; left: 20px; z-index: 100; max-width: calc(100vw - 40px); display: flex; flex-direction: column; gap: 8px; pointer-events: none; transition: bottom 0.16s ease; }
+    body.has-bottom-bar .toast-stack { bottom: 84px; }
     .toast {
       pointer-events: auto;
       background: var(--soft);
@@ -615,19 +701,26 @@
     .nav-badge.running { background: rgba(16, 185, 129, 0.22); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.45); }
 
     .poster-status-pill {
-      position: absolute; top: 8px; left: 8px; z-index: 2;
-      padding: 3px 8px; border-radius: 7px; font-size: 11px; font-weight: 700; font-family: var(--mono);
+      position: absolute; top: 7px; left: 7px; z-index: 2;
+      max-width: calc(100% - 48px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      padding: 2px 7px; border-radius: 7px; font-size: 10.5px; font-weight: 700; font-family: var(--mono);
       backdrop-filter: blur(6px); background: rgba(11, 15, 23, 0.85); border: 1px solid var(--border); color: var(--text);
+      pointer-events: none;
     }
     .poster-status-pill.active { background: rgba(14, 165, 233, 0.9); color: #fff; border-color: rgba(56, 189, 248, 0.7); }
     .poster-status-pill.saved { background: rgba(16, 185, 129, 0.9); color: #022c22; border-color: transparent; }
 
     /* BROWSE TOOLBAR, LIVE DOCK & MULTI-SELECT UX */
     .browse-toolbar {
-      display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-      margin-bottom: 18px;
+      display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: nowrap;
+      margin-bottom: 16px;
     }
-    .browse-toolbar .cat-row { margin-bottom: 0; flex: 1; min-width: 240px; }
+    .browse-toolbar .cat-row { margin-bottom: 0; flex: 1; min-width: 0; }
+    .browse-toolbar-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; white-space: nowrap; }
+    @media (max-width: 720px) {
+      .browse-toolbar { flex-wrap: wrap; }
+      .browse-toolbar .cat-row { flex-basis: 100%; }
+    }
     .multi-toggle-btn { margin-left: auto; white-space: nowrap; border-radius: 99px; }
     .multi-toggle-btn.active {
       background: rgba(16, 185, 129, 0.18); border-color: var(--green); color: #6ee7b7;
@@ -663,12 +756,22 @@
       box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.22);
     }
     .poster-pick-chk {
-      position: absolute; top: 8px; right: 8px; z-index: 3;
-      width: 28px; height: 28px; border-radius: 9px;
+      position: absolute; top: 7px; right: 7px; z-index: 3;
+      width: 26px; height: 26px; border-radius: 8px;
       border: 1.5px solid rgba(255, 255, 255, 0.45);
-      background: rgba(11, 15, 23, 0.78); color: #fff; backdrop-filter: blur(6px);
-      display: grid; place-items: center; cursor: pointer; font-size: 14px; font-weight: 800;
-      transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+      background: rgba(11, 15, 23, 0.82); color: #fff; backdrop-filter: blur(6px);
+      display: grid; place-items: center; cursor: pointer; font-size: 13px; font-weight: 800;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.14s ease, transform 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+    }
+    .poster-card:hover .poster-pick-chk,
+    .poster-card:focus-within .poster-pick-chk,
+    .poster-card.is-picked .poster-pick-chk,
+    body.multi-select-on .poster-pick-chk {
+      opacity: 1; pointer-events: auto;
+    }
+    @media (hover: none) {
+      .poster-pick-chk { opacity: 1; pointer-events: auto; }
     }
     .poster-pick-chk:hover { transform: scale(1.08); border-color: var(--green); }
     .poster-card.is-picked .poster-pick-chk {
@@ -836,12 +939,14 @@
 
     /* PLATFORM SWITCHER & UNIVERSAL SOCIAL VIDEO PANEL */
     .source-row {
-      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-      margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border);
+      flex: 1; min-width: 0;
+      display: flex; align-items: center; gap: 6px; flex-wrap: nowrap;
+      overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
     }
+    .source-row::-webkit-scrollbar { display: none; }
     .source-pill {
-      cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
-      padding: 7px 14px; border-radius: 10px; font-size: 13px; font-weight: 700;
+      cursor: pointer; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; white-space: nowrap;
+      padding: 6px 13px; border-radius: 99px; font-size: 12.5px; font-weight: 700;
       border: 1px solid var(--border); background: var(--card); color: var(--muted);
       transition: all 0.14s ease;
     }
@@ -856,10 +961,19 @@
     }
 
     .poster-src-tag {
-      position: absolute; top: 8px; right: 34px; z-index: 2;
-      padding: 2px 7px; border-radius: 6px; font-size: 10.5px; font-weight: 700;
+      position: absolute; top: 7px; right: 7px; z-index: 2;
+      padding: 2px 6px; border-radius: 6px; font-size: 10px; font-weight: 700;
       background: rgba(11, 15, 23, 0.85); border: 1px solid rgba(255,255,255,0.16); color: #cbd5e1;
-      text-transform: uppercase; pointer-events: none;
+      text-transform: uppercase; pointer-events: none; transition: right 0.14s ease;
+    }
+    .poster-card:hover .poster-src-tag,
+    .poster-card:focus-within .poster-src-tag,
+    .poster-card.is-picked .poster-src-tag,
+    body.multi-select-on .poster-src-tag {
+      right: 38px;
+    }
+    @media (hover: none) {
+      .poster-src-tag { right: 38px; }
     }
     .ep-btn.locked {
       opacity: 0.5; border-style: dashed; border-color: rgba(245, 158, 11, 0.35);
@@ -912,6 +1026,7 @@
     <div id="brandHome" class="brand" title="ទំព័រដើម">
       <div class="brand-icon">EZ</div>
       <span>EZA PRO</span>
+      <span id="brandVersionBadge" style="font-size: 11px; font-weight: 600; color: var(--muted); background: rgba(255,255,255,0.06); border: 1px solid var(--border); padding: 1px 7px; border-radius: 99px;">v1.1.1</span>
     </div>
 
     <div class="search-pill" role="search">
@@ -946,7 +1061,7 @@
     </div>
   </header>
 
-  <div id="cloudBannerBar" style="display:none; background:rgba(56,189,248,0.12); border-bottom:1px solid rgba(56,189,248,0.3); color:#bae6fd; padding:8px 24px; font-size:13px; text-align:center; font-weight:600;"></div>
+  <div id="cloudBannerBar" style="display:none; align-items:center; justify-content:center; gap:10px; flex-wrap:wrap; background:rgba(56,189,248,0.12); border-bottom:1px solid rgba(56,189,248,0.3); color:#bae6fd; padding:8px 24px; font-size:13px; text-align:center; font-weight:600;"></div>
 
   <div id="loadingOverlay" class="overlay">
     <div class="spinner"></div>
@@ -975,21 +1090,35 @@
         <button id="btnClearSearch" class="btn btn-xs">✖️ ត្រឡប់ទៅបញ្ជីរឿង</button>
       </div>
 
-      <div id="sourceRow" class="source-row"></div>
+      <div class="hscroll-wrap source-wrap">
+        <button type="button" class="hscroll-btn" data-hscroll="sourceRow" data-dir="-1" aria-label="Scroll sources left">‹</button>
+        <div id="sourceRow" class="source-row"></div>
+        <button type="button" class="hscroll-btn" data-hscroll="sourceRow" data-dir="1" aria-label="Scroll sources right">›</button>
+      </div>
 
       <div id="browseToolbar" class="browse-toolbar">
-        <div id="catRow" class="cat-row"></div>
-        <button id="btnMultiSelectMode" class="btn btn-sm multi-toggle-btn" title="រើសរឿងច្រើនទាញយកព្រមគ្នា">☑️ រើសច្រើនរឿង</button>
+        <div id="catWrap" class="hscroll-wrap cat-wrap">
+          <button type="button" class="hscroll-btn" data-hscroll="catRow" data-dir="-1" aria-label="Scroll categories left">‹</button>
+          <div id="catRow" class="cat-row"></div>
+          <button type="button" class="hscroll-btn" data-hscroll="catRow" data-dir="1" aria-label="Scroll categories right">›</button>
+        </div>
+        <div class="browse-toolbar-actions">
+          <label class="btn btn-sm" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;border-radius:99px;" title="ផ្គុំជា ១ វីដេអូពេញដោយស្វ័យប្រវត្តិក្រោយទាញចប់">
+            <input id="chkBrowseAutoMerge" type="checkbox" style="width:14px;height:14px;accent-color:var(--green);" />
+            <span>🎞️ អូតូផ្គុំពេញ</span>
+          </label>
+          <button id="btnMultiSelectMode" class="btn btn-sm multi-toggle-btn" title="រើសរឿងច្រើនទាញយកព្រមគ្នា">☑️ រើសច្រើនរឿង</button>
+        </div>
       </div>
 
       <div id="socialPanel" class="social-panel">
         <div class="social-hero">
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
             <div>
-              <div style="font-size:16px;font-weight:700;">🌐 ទាញយកវីដេអូ &amp; Playlist ពីគ្រប់ Platform (yt-dlp Open Source)</div>
+              <div style="font-size:16px;font-weight:700;">🌐 ទាញយកវីដេអូ &amp; Playlist ពីគ្រប់ Platform</div>
               <div style="font-size:12.5px;color:var(--muted);margin-top:2px;">បិទភ្ជាប់ Link វីដេអូ ឬ Playlist រួចជ្រើសគុណភាព — ឯកសារនឹងចូលក្នុង <strong>គ្រប់គ្រងវីដេអូ</strong> ដោយស្វ័យប្រវត្តិ!</div>
             </div>
-            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <div id="socialTechBadges" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;">
               <span id="ytdlpVerBadge" class="vm-badge done" style="display:none;">yt-dlp</span>
               <span id="aria2VerBadge" class="vm-badge done" style="display:none;">aria2c</span>
               <span id="nm3u8VerBadge" class="vm-badge done" style="display:none;">N_m3u8DL-RE</span>
@@ -1048,7 +1177,7 @@
               </label>
               <label style="font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
                 <input id="socialUseAria2" type="checkbox" checked />
-                ⚡ aria2c x16 (លឿនជាងមុន)
+                ⚡ បង្កើនល្បឿនទាញ x16
               </label>
               <button id="btnSocialDownload" type="button" class="btn btn-primary">⬇️ ទាញយកភ្លាម</button>
             </div>
@@ -1086,7 +1215,7 @@
       <div class="card hero">
         <div style="display: flex; flex-direction: column; gap: 8px; align-items: stretch; flex-shrink: 0; width: 120px;">
           <img id="heroCover" class="hero-cover" src="" referrerpolicy="no-referrer" alt="" />
-          <button id="btnDownloadCover" class="btn btn-xs" style="border-color: rgba(56, 189, 248, 0.45); color: #38bdf8;" title="ទាញយករូប Poster រឿងជាឯកសារ JPG">🖼️ ទាញយក Cover</button>
+          <button id="btnDownloadCover" class="btn btn-xs" style="border-color: rgba(56, 189, 248, 0.45); color: #38bdf8;" title="ទាញយករូបក្របរឿងគុណភាពច្បាស់កំពូល (Ultra-HD Cover.jpg)">🖼️ ទាញក្រប HD</button>
         </div>
         <div class="hero-info">
           <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
@@ -1110,9 +1239,9 @@
             <button id="btnFindFullMovie" class="btn btn-amber" style="display: none;">🔓 រករឿងពេញឥតគិតថ្លៃ (Full Movie)</button>
             <button id="btnRetryFailed" class="btn btn-amber" style="display: none;">🔄 ទាញភាគបរាជ័យឡើងវិញ</button>
             <button id="btnStop" class="btn btn-danger" style="display: none;">⏹️ បញ្ឈប់</button>
-            <button id="btnMerge" class="btn">🎞️ ផ្គុំជា ១ វីដេអូ</button>
+            <button id="btnQuickMergeAll" class="btn btn-primary" style="display: none;" title="ផ្គុំភាគដែលមានទាំងអស់ភ្លាមៗ (១–៥ វិនាទី)">⚡ ផ្គុំលឿនទាំងអស់</button>
+            <button id="btnMerge" class="btn">🎞️ ផ្គុំ / រើសភាគ...</button>
             <button id="btnPlayFull" class="btn" style="display: none; border-color: rgba(16, 185, 129, 0.5); color: #34d399;">▶️ មើលរឿងពេញ</button>
-            <button id="btnDownloadCoverHd" class="btn" title="ទាញយករូបក្របរឿងគុណភាពច្បាស់កំពូល (Ultra-HD Cover.jpg)">🖼️ ទាញក្រប HD</button>
             <button id="btnOpenDramaFolder" class="btn">📂 បើកថត</button>
           </div>
         </div>
@@ -1156,10 +1285,10 @@
 
         <div id="vipTokenBar" style="display: none; margin-bottom: 12px; padding: 10px 12px; background: rgba(15, 23, 42, 0.85); border: 1px solid var(--border); border-radius: 10px;">
           <div style="font-size: 12px; color: var(--muted); margin-bottom: 6px;">
-            ប្រសិនបើបងមានគណនី VIP ក្នុងកម្មវិធី DramaBox អាចបញ្ចូល <code style="color:#7dd3fc;">Bearer Token</code> ផ្ទាល់ខ្លួនដើម្បីដោះសោគ្រប់ភាគ 1080p <span id="vipTokenStatusBadge" style="color:#34d399; font-weight:700;"></span>៖
+            ប្រសិនបើបងមានគណនី VIP ក្នុងកម្មវិធី DramaBox អាចបញ្ចូល Token ផ្ទាល់ខ្លួនដើម្បីដោះសោគ្រប់ភាគ 1080p <span id="vipTokenStatusBadge" style="color:#34d399; font-weight:700;"></span>៖
           </div>
           <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <input id="vipTokenInput" type="text" placeholder="បិទភ្ជាប់ DramaBox Bearer Token (eyJ0eXAiOiJKV1Q...) រួចចុចរក្សាទុក" style="flex: 1; min-width: 220px; font-size: 12.5px; padding: 6px 10px;" />
+            <input id="vipTokenInput" type="text" placeholder="បិទភ្ជាប់ DramaBox VIP Token រួចចុចរក្សាទុក" style="flex: 1; min-width: 220px; font-size: 12.5px; padding: 6px 10px;" />
             <button id="btnSaveVipToken" type="button" class="btn btn-primary btn-xs">💾 រក្សាទុក Token</button>
             <button id="btnClearVipToken" type="button" class="btn btn-ghost btn-xs">🧹 លុប Token</button>
           </div>
@@ -1297,47 +1426,48 @@
       <div class="modal-body">
         <div class="field">
           <label>📁 ថតរក្សាទុកវីដេអូ</label>
-          <div style="display: flex; gap: 8px;">
-            <input id="folderInput" type="text" style="flex: 1;" />
-            <button id="btnBrowseFolder" class="btn btn-sm">ជ្រើសថត</button>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <input id="folderInput" type="text" style="flex: 1; min-width: 0;" />
+            <button id="btnBrowseFolder" class="btn btn-sm" style="flex-shrink: 0; white-space: nowrap;">ជ្រើសថត</button>
           </div>
         </div>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div style="display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 12px;">
           <div class="field">
-            <label>🎞️ គុណភាពវីដេអូ &amp; ការសន្សំ Data</label>
+            <label>🎞️ គុណភាពវីដេអូ &amp; Data</label>
             <select id="qualitySelect">
-              <option value="fast">⚡ 1080p Smart HD (ច្បាស់កំពូល 1080p • ដោនលឿន &amp; សន្សំ Data)</option>
-              <option value="1080p">💎 1080p Max Bitrate (ច្បាស់កំពូល 1080p • Bitrate ខ្ពស់បំផុត)</option>
-              <option value="720p">📱 720p Eco (សម្រាប់អ៊ីនធឺណិតខ្សោយបំផុត)</option>
+              <option value="fast">⚡ 1080p Smart HD (លឿន • សន្សំ Data)</option>
+              <option value="1080p">💎 1080p Max Bitrate (ច្បាស់បំផុត)</option>
+              <option value="720p">📱 720p Eco (អ៊ីនធឺណិតខ្សោយ)</option>
             </select>
           </div>
           <div class="field">
-            <label>⚡ ល្បឿន Threads</label>
+            <label>⚡ ល្បឿនទាញយក</label>
             <select id="workersSelect">
               <option value="6">6 (ស្រាល)</option>
-              <option value="8" selected>8 (ល្អបំផុត)</option>
-              <option value="12">12 (លឿន)</option>
-              <option value="16">16 (⚡ Turbo កំពូល)</option>
+              <option value="8">8 (ល្អ)</option>
+              <option value="12" selected>12 (លឿន • ណែនាំ)</option>
+              <option value="16">16 (⚡ Turbo)</option>
+              <option value="20">20 (🚀 Max Turbo)</option>
             </select>
           </div>
         </div>
 
         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
-          <input id="chkAutoMerge" type="checkbox" style="width: 16px; height: 16px;" />
+          <input id="chkAutoMerge" type="checkbox" style="width: 16px; height: 16px; flex-shrink: 0;" />
           ផ្គុំរឿងពេញដោយស្វ័យប្រវត្តិក្រោយទាញចប់
         </label>
 
         <div style="padding:10px 12px; background:rgba(56,189,248,0.07); border:1px solid rgba(56,189,248,0.28); border-radius:11px; display:flex; flex-direction:column; gap:8px;">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
-            <span style="font-size:12.5px; font-weight:700; color:#7dd3fc;">🛠️ ជួសជុល &amp; អាប់ដេតប្រព័ន្ធទាញយក</span>
-            <div style="display:flex; gap:6px; flex-wrap:wrap;">
-              <button id="btnRepairEngine" type="button" class="btn btn-xs">🔧 ជួសជុលការភ្ជាប់ Server</button>
-              <button id="btnUpdateYtdlp" type="button" class="btn btn-xs btn-amber">⬆️ អាប់ដេត yt-dlp</button>
-              <button id="btnCheckUpstream" type="button" class="btn btn-xs">🔍 ឆែក GitHub Update</button>
-            </div>
+            <span id="repairBoxTitle" style="font-size:12.5px; font-weight:700; color:#7dd3fc;">🛠️ ជួសជុលការភ្ជាប់</span>
           </div>
-          <div id="repairEngineStatus" style="font-size:11.5px; color:var(--muted);">ប្រើនៅពេលទាញវីដេអូយឺត ឬលោត Error ពី Server ដើម</div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button id="btnRepairEngine" type="button" class="btn btn-xs">🔧 ជួសជុលការភ្ជាប់</button>
+            <button id="btnUpdateYtdlp" type="button" class="btn btn-xs btn-amber" style="display:none;">⬆️ អាប់ដេត yt-dlp</button>
+            <button id="btnCheckUpstream" type="button" class="btn btn-xs" style="display:none;">🔍 ឆែក GitHub Update</button>
+          </div>
+          <div id="repairEngineStatus" style="font-size:11.5px; color:var(--muted);">ប្រើនៅពេលទាញវីដេអូយឺត ឬមានបញ្ហាការភ្ជាប់</div>
           <div id="upstreamCheckStatus" style="display:none; font-size:11.5px; color:var(--muted); line-height:1.45; border-top:1px dashed rgba(56,189,248,0.22); padding-top:6px;"></div>
         </div>
 
@@ -1356,7 +1486,7 @@
           <div id="settingsLicExpiry" style="font-size:11.5px; color:var(--muted);"></div>
         </div>
 
-        <div id="settingsCustomCmsBox" style="padding:10px 12px; background:rgba(99,102,241,0.06); border:1px solid rgba(99,102,241,0.25); border-radius:11px; display:flex; flex-direction:column; gap:8px;">
+        <div id="settingsCustomCmsBox" style="display:none; padding:10px 12px; background:rgba(99,102,241,0.06); border:1px solid rgba(99,102,241,0.25); border-radius:11px; flex-direction:column; gap:8px;">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
             <span style="font-size:12.5px; font-weight:700; color:var(--text);">🧩 ប្រភពរឿងផ្ទាល់ខ្លួន (MacCMS / AppleCMS API)</span>
           </div>
@@ -1396,8 +1526,8 @@
         </div>
 
         <div id="settingsAppFooter" style="padding-top: 6px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
-          <span style="font-size: 12px; color: var(--muted);">EZA PRO Downloader v1.0.0</span>
-          <span style="font-size: 12px; color: var(--dim);">Powered by EZA PRO</span>
+          <span id="settingsVersionLabel" style="font-size: 12px; color: var(--muted); user-select: none;">EZA PRO Downloader v1.1.1</span>
+          <span id="settingsAdminBadge" style="display: none; font-size: 11px; color: #fbbf24; font-weight: 700;">Admin Mode</span>
         </div>
       </div>
       <div class="modal-foot">
@@ -1472,7 +1602,8 @@
       </div>
       <div class="modal-foot">
         <button class="btn btn-ghost btn-sm" data-close="mergeModal">បោះបង់</button>
-        <button id="btnConfirmMerge" class="btn btn-primary btn-sm">🎞️ ចាប់ផ្តើមផ្គុំតាមលំដាប់</button>
+        <button id="btnMergeCompress" type="button" class="btn btn-sm">🗜️ ផ្គុំ &amp; បង្ហាប់ 720p</button>
+        <button id="btnConfirmMerge" type="button" class="btn btn-primary btn-sm">⚡ ផ្គុំលឿន (១–៥ វិនាទី)</button>
       </div>
     </div>
   </div>
@@ -1568,21 +1699,20 @@
         { id: 'comeback', label: '⚔️ សងសឹក' },
         { id: 'costume', label: '⏳ បុរាណ/ឆ្លងភព' },
         { id: 'comedy', label: '🎭 កំប្លែង' },
-        { id: 'family', label: '👨‍👩‍👧 គ្រួសារ' },
-        { id: 'suspense', label: '🔍 អាថ៌កំបាំង' }
+        { id: 'family', label: '👨‍👩‍👧 គ្រួសារ' }
       ];
 
       const DEFAULT_SOURCES = [
-        { id: 'hongguo', label: '🔥 HongGuo (红果)' },
-        { id: 'ytdm', label: '📺 YouTube / DM (រឿងពេញ)' },
+        { id: 'hongguo', label: '🔥 HongGuo' },
+        { id: 'ytdm', label: '📺 YouTube / DM' },
         { id: 'dramabox', label: '🎬 DramaBox' },
         { id: 'reelshort', label: '🎭 ReelShort' },
         { id: 'dramawave', label: '🌊 DramaWave' },
         { id: 'netshort', label: '⚡ NetShort' },
         { id: 'goodshort', label: '✨ GoodShort' },
-        { id: 'hema', label: '🦛 Hema (河马)' },
-        { id: 'xifan', label: '🍱 Xifan (西饭)' },
-        { id: 'social', label: '🌐 Social Video / Link' }
+        { id: 'hema', label: '🦛 Hema' },
+        { id: 'xifan', label: '🍱 Xifan' },
+        { id: 'social', label: '🌐 ទាញ Link' }
       ];
 
       const state = {
@@ -1626,6 +1756,54 @@
       };
 
       const $ = (id) => document.getElementById(id);
+
+      const CLEAN_SOURCE_LABELS = {
+        hongguo: '🔥 HongGuo',
+        ytdm: '📺 YouTube / DM',
+        dramabox: '🎬 DramaBox',
+        reelshort: '🎭 ReelShort',
+        dramawave: '🌊 DramaWave',
+        netshort: '⚡ NetShort',
+        goodshort: '✨ GoodShort',
+        hema: '🦛 Hema',
+        xifan: '🍱 Xifan',
+        social: '🌐 ទាញ Link',
+      };
+
+      function formatSourceLabel(src) {
+        if (!src) return '';
+        if (CLEAN_SOURCE_LABELS[src.id]) return CLEAN_SOURCE_LABELS[src.id];
+        return String(src.label || src.shortLabel || src.id || '').replace(/\s*\([^)]*\)\s*/g, ' ').trim();
+      }
+
+      function isAdminMode() {
+        try {
+          if (new URLSearchParams(window.location.search).get('admin') === '1') return true;
+          return localStorage.getItem('eza_admin') === '1';
+        } catch {
+          return false;
+        }
+      }
+
+      function syncAdminUi() {
+        const admin = isAdminMode();
+        const showGh = admin && !state.isPackagedClient;
+        if ($('btnUpdateYtdlp')) $('btnUpdateYtdlp').style.display = admin ? 'inline-flex' : 'none';
+        if ($('btnCheckUpstream')) $('btnCheckUpstream').style.display = showGh ? 'inline-flex' : 'none';
+        if ($('upstreamCheckStatus') && !showGh) $('upstreamCheckStatus').style.display = 'none';
+        if ($('settingsCustomCmsBox')) $('settingsCustomCmsBox').style.display = admin ? 'flex' : 'none';
+        if ($('socialTechBadges')) $('socialTechBadges').style.display = admin ? 'flex' : 'none';
+        if ($('settingsAdminBadge')) $('settingsAdminBadge').style.display = admin ? 'inline-block' : 'none';
+        if ($('repairBoxTitle')) {
+          $('repairBoxTitle').textContent = admin
+            ? '🛠️ ជួសជុល & អាប់ដេតប្រព័ន្ធទាញយក'
+            : '🛠️ ជួសជុលការភ្ជាប់';
+        }
+        if ($('btnSettings') && !showGh) {
+          $('btnSettings').textContent = '⚙️';
+          $('btnSettings').title = 'ការកំណត់';
+        }
+      }
 
       function esc(s) {
         return String(s || '')
@@ -1751,10 +1929,13 @@
 
         const showMultiFloat = onBrowse && (state.multiSelect || count > 0);
         $('multiSelFloat').classList.toggle('show', showMultiFloat);
+        document.body.classList.toggle('multi-select-on', showMultiFloat);
         $('multiSelLabel').textContent = count > 0 ? `បានរើស ${count} រឿង` : 'ចុចលើរឿងនីមួយៗ ដើម្បីរើស';
         $('btnDownloadPicked').disabled = count === 0;
         $('btnDownloadPicked').textContent = count > 0 ? `⬇️ ទាញយកទាំង ${count} រឿងព្រមគ្នា` : '⬇️ រើសរឿងជាមុនសិន';
-        $('chkMultiAutoMerge').checked = $('chkAutoMerge').checked;
+        const autoOn = $('chkAutoMerge').checked;
+        $('chkMultiAutoMerge').checked = autoOn;
+        if ($('chkBrowseAutoMerge')) $('chkBrowseAutoMerge').checked = autoOn;
       }
 
       function renderLiveDock() {
@@ -1811,6 +1992,7 @@
 
         const activeJobs = state.jobs.filter((j) => j.active);
         const multiBarVisible = state.view === 'browse' && (state.multiSelect || state.pickedDramas.size > 0);
+        document.body.classList.toggle('has-bottom-bar', Boolean(showSel || multiBarVisible));
         const showFloat = activeJobs.length > 0 && !multiBarVisible && (
           (state.view === 'drama' && !(activeJobs.length === 1 && curActive)) ||
           state.view === 'browse'
@@ -1826,15 +2008,34 @@
         }
       }
 
+      function syncHScrollRow(rowId) {
+        const el = $(rowId);
+        if (!el) return;
+        const wrap = el.parentElement;
+        if (!wrap) return;
+        const prevBtn = wrap.querySelector('[data-dir="-1"]');
+        const nextBtn = wrap.querySelector('[data-dir="1"]');
+        const canLeft = el.scrollLeft > 4;
+        const canRight = (el.scrollLeft + el.clientWidth) < (el.scrollWidth - 4);
+        if (prevBtn) prevBtn.classList.toggle('show', canLeft);
+        if (nextBtn) nextBtn.classList.toggle('show', canRight);
+      }
+
+      function syncAllHScroll() {
+        syncHScrollRow('sourceRow');
+        syncHScrollRow('catRow');
+      }
+
       // ================= BROWSE & SOURCES =================
       function renderSources() {
         const el = $('sourceRow');
         if (!el) return;
         el.innerHTML = state.sources.map((s) => `
-          <button type="button" class="source-pill ${s.id === 'social' ? 'social-tab ' : ''}${state.source === s.id ? 'active' : ''}" data-source="${esc(s.id)}">
-            ${esc(s.label)}
+          <button type="button" class="source-pill ${s.id === 'social' ? 'social-tab ' : ''}${state.source === s.id ? 'active' : ''}" data-source="${esc(s.id)}" title="${esc(s.label)}">
+            ${esc(formatSourceLabel(s))}
           </button>
         `).join('');
+        requestAnimationFrame(() => syncHScrollRow('sourceRow'));
       }
 
       function renderCats() {
@@ -1854,6 +2055,7 @@
             loadCatalog(false);
           });
         });
+        requestAnimationFrame(() => syncHScrollRow('catRow'));
       }
 
       function syncBrowseUi() {
@@ -1861,11 +2063,13 @@
         const isSearch = !isSocial && state.mode === 'search';
         $('searchHeader').classList.toggle('show', isSearch);
         $('browseToolbar').style.display = isSocial ? 'none' : 'flex';
+        if ($('catWrap')) $('catWrap').style.display = (isSearch || isSocial) ? 'none' : 'flex';
         $('catRow').style.display = (isSearch || isSocial) ? 'none' : 'flex';
         $('dramaGrid').style.display = isSocial ? 'none' : 'grid';
         $('loadMoreWrap').style.display = (isSearch || isSocial) ? 'none' : 'flex';
         $('socialPanel').classList.toggle('show', isSocial);
         if (isSearch) $('searchHeaderText').textContent = `🔍 លទ្ធផល "${state.searchQuery}" (${state.matches.length} រឿង)`;
+        requestAnimationFrame(syncAllHScroll);
       }
 
       let catalogSeq = 0;
@@ -2064,8 +2268,8 @@
           cover: d.cover,
           total: Number(d.total) || 0,
           autoMerge: $('chkAutoMerge').checked,
-          compressMerge: Boolean($('chkCompressMerge')?.checked),
-          workers: Number($('workersSelect').value) || 8,
+          compressMerge: false,
+          workers: Number($('workersSelect').value) || 12,
           qualityMode: $('qualitySelect').value || 'fast'
         };
       }
@@ -2105,10 +2309,11 @@
           pillText = `✓ ${doneCnt}/${expected}`;
           btnText = `⬇️ ទាញបន្ថែម (${doneCnt}/${expected})`;
         } else if (doneCnt > 0) {
+          const hasFull = Boolean(libItem && libItem.hasMerged);
           pillClass = 'saved';
-          pillText = `✓ ${doneCnt}`;
+          pillText = hasFull ? `🎬 រួចរាល់` : `✓ ${doneCnt}`;
           btnClass = 'poster-dl-btn is-done';
-          btnText = `✅ រួចរាល់ (${doneCnt})`;
+          btnText = hasFull ? '▶️ មើលរឿងពេញ' : `▶️ មើល (${doneCnt} ភាគ)`;
         }
 
         return { sid, isRunning, isPicked, pillClass, pillText, btnClass, btnText };
@@ -2419,6 +2624,13 @@
         const existing = getDramaJob(d.id);
         if (existing && existing.active) {
           setView('manage');
+          return;
+        }
+        const libItem = getLibraryItem(d.id, d.title);
+        const expected = Number(d.total) || Number(libItem && libItem.expectedTotal) || 0;
+        const doneCnt = libItem ? Number(libItem.downloadedCount || 0) : 0;
+        if (libItem && doneCnt > 0 && (!expected || doneCnt >= expected)) {
+          await openFolderVideo(libItem.folder, d.id, d.titleKhmer || d.title, Boolean(libItem.hasMerged));
           return;
         }
         try {
@@ -2733,11 +2945,12 @@
         $('btnDownloadAll').disabled = !d || missing.length === 0;
         const allLockedVip = !!(d && d.total > 0 && state.lockedEps.size >= d.total && readyCount === 0);
         const freeTotal = d ? Math.max(0, d.total - state.lockedEps.size) : 0;
+        const autoPrefix = $('chkAutoMerge')?.checked ? '⬇️ ទាញ & ផ្គុំពេញ' : '⬇️ ទាញយកទាំងអស់';
         $('btnDownloadAll').textContent = allLockedVip
           ? '🔒 គ្រប់ភាគជាប់សោ VIP'
           : (missing.length === 0
               ? '✅ ទាញយកគ្រប់ភាគឥតគិតថ្លៃរួចរាល់'
-              : (missing.length === freeTotal ? `⬇️ ទាញយកទាំងអស់ (${missing.length} ភាគ)` : `⬇️ ទាញយកភាគនៅសល់ (${missing.length} ភាគ)`));
+              : (missing.length === freeTotal ? `${autoPrefix} (${missing.length} ភាគ)` : `⬇️ ទាញយកភាគនៅសល់ (${missing.length} ភាគ)`));
 
         if ($('btnFindFullMovie')) {
           const overseasVip = ['dramabox', 'reelshort', 'dramawave', 'netshort', 'goodshort'].includes(d && d.source);
@@ -2747,10 +2960,17 @@
         $('btnRetryFailed').textContent = `🔄 ទាញភាគបរាជ័យឡើងវិញ (${failed.length})`;
         $('btnStop').style.display = active ? 'inline-flex' : 'none';
 
+        if ($('btnQuickMergeAll')) {
+          $('btnQuickMergeAll').style.display = (!active && d && readyCount >= 2 && !d.hasMerged) ? 'inline-flex' : 'none';
+          $('btnQuickMergeAll').textContent = `⚡ ផ្គុំរឿងពេញ (${readyCount} ភាគ)`;
+        }
+        if ($('btnPlayFull')) {
+          $('btnPlayFull').classList.toggle('btn-primary', Boolean(d && d.hasMerged));
+        }
         $('btnMerge').disabled = active || !d;
         $('btnMerge').classList.toggle('btn-muted', !active && !!d && readyCount < 2);
         $('btnMerge').textContent = readyCount >= 2
-          ? `🎞️ ផ្គុំជា ១ វីដេអូ (${readyCount} ភាគ)`
+          ? '🎞️ រើសភាគ / បង្ហាប់...'
           : '🎞️ ផ្គុំជា ១ វីដេអូ (ត្រូវការ ≥២ ភាគ)';
         $('btnPlayFull').style.display = (!active && d && d.hasMerged) ? 'inline-flex' : 'none';
         syncFloatingBars();
@@ -3069,9 +3289,10 @@
                         ${isAct ? `<span class="vm-badge active" data-lib-live="1">⏳ ${liveJob.progress || 0}%</span>` : ''}
                       </div>
                       <div class="vm-actions">
-                        ${item.downloadedCount > 0 ? `<button class="btn btn-primary btn-xs" data-act="watch-folder" data-folder="${esc(item.folder)}" data-sid="${esc(item.seriesId)}" data-title="${esc(titleShow)}">▶️ មើល</button>` : ''}
-                        ${mergedList.length > 0 ? `<button class="btn btn-xs" style="border-color:rgba(16,185,129,0.5);color:#34d399;" data-act="watch-full-folder" data-folder="${esc(item.folder)}" data-sid="${esc(item.seriesId)}" data-title="${esc(titleShow)}">🎬 មើលពេញ</button>` : ''}
-                        ${item.downloadedCount >= 2 && !isAct ? `<button class="btn btn-xs" data-act="merge-folder" data-folder="${esc(item.folder)}" data-sid="${esc(item.seriesId)}">🎞️ ផ្គុំតាមលំដាប់</button>` : ''}
+                        ${item.downloadedCount > 0 ? `<button class="btn ${mergedList.length > 0 ? 'btn-xs' : 'btn-primary btn-xs'}" data-act="watch-folder" data-folder="${esc(item.folder)}" data-sid="${esc(item.seriesId)}" data-title="${esc(titleShow)}">▶️ មើល</button>` : ''}
+                        ${mergedList.length > 0 ? `<button class="btn btn-primary btn-xs" data-act="watch-full-folder" data-folder="${esc(item.folder)}" data-sid="${esc(item.seriesId)}" data-title="${esc(titleShow)}">🎬 មើលពេញ</button>` : ''}
+                        ${mergedList.length === 0 && item.downloadedCount >= 2 && !isAct ? `<button class="btn btn-primary btn-xs" data-act="quick-merge-folder" data-folder="${esc(item.folder)}" data-sid="${esc(item.seriesId)}" title="ផ្គុំភាគទាំងអស់ជារឿងពេញ ១ ឯកសារក្នុង ១–៥ វិនាទី">⚡ ផ្គុំរឿងពេញ</button>` : ''}
+                        ${item.downloadedCount >= 2 && !isAct ? `<button class="btn btn-xs" data-act="merge-folder" data-folder="${esc(item.folder)}" data-sid="${esc(item.seriesId)}">🎞️ រើសភាគផ្គុំ...</button>` : ''}
                         ${(seq.sorted.length > 0 || mergedList.length > 0) ? `<button class="btn btn-xs" data-act="toggle-lib-eps" data-folder="${esc(item.folder)}">${isEpsOpen ? '📋 បិទបញ្ជីភាគ ▴' : '📋 ភាគតាមលំដាប់ ▾'}</button>` : ''}
                         ${item.seriesId && !item.isSocial ? `<button class="btn btn-xs" data-act="open-drama" data-sid="${esc(item.seriesId)}" data-title="${esc(item.title)}" data-khmer="${esc(item.titleKhmer)}" data-cover="${esc(item.cover)}">📋 ទាញបន្ថែម</button>` : ''}
                         <button class="btn btn-xs" data-act="open-folder" data-folder="${esc(item.folder)}" title="បើកថត">📂</button>
@@ -3317,6 +3538,7 @@
           previewEl.innerHTML = 'សូមជ្រើសយ៉ាងតិច <strong>២ ភាគ</strong> ដើម្បីផ្គុំតាមលំដាប់។';
           confirmBtn.disabled = true;
           confirmBtn.textContent = '🎞️ រើសយ៉ាងតិច ២ ភាគ';
+          if ($('btnMergeCompress')) $('btnMergeCompress').disabled = true;
           return;
         }
 
@@ -3343,21 +3565,22 @@
         previewEl.innerHTML = `
           <div>លំដាប់ផ្គុំ៖ <strong>${esc(chainPreview)}</strong> (${selected.length} ភាគ)</div>
           <div>ឯកសារលទ្ធផល៖ <strong>Full Movie/${esc(outName)}</strong></div>
-          <div>ម៉ូដផ្គុំ៖ <strong>${isCompress ? '🗜️ បង្ហាប់ទំហំឱ្យស្រាល (Telegram & Web Ready)' : '⚡ ផ្គុំលឿនរក្សាគុណភាពដើម (Direct Copy)'}</strong></div>
+          <div>ម៉ូដផ្គុំ៖ <strong>${isCompress ? '🗜️ បង្ហាប់ទំហំឱ្យស្រាល (Parallel GPU/CPU បន្ថយទំហំ File)' : '⚡ ផ្គុំលឿនរក្សាគុណភាពដើម (Direct Copy — ១-៥ វិនាទី)'}</strong></div>
         `;
         confirmBtn.disabled = false;
+        if ($('btnMergeCompress')) $('btnMergeCompress').disabled = false;
         confirmBtn.textContent = isCompress
           ? `🗜️ ចាប់ផ្តើមបង្ហាប់ & ផ្គុំ (${selected.length} ភាគ)`
-          : `🎞️ ចាប់ផ្តើមផ្គុំតាមលំដាប់ (${selected.length} ភាគ)`;
+          : `⚡ ផ្គុំលឿន (${selected.length} ភាគ)`;
       }
 
-      async function confirmAndStartMerge() {
+      async function confirmAndStartMerge(forceCompress = null) {
         const ctx = state.mergeCtx;
         if (!ctx) return;
         const selected = ctx.availableEps.filter((ep) => ctx.selectedSet.has(ep));
         if (selected.length < 2) return;
         const isAll = selected.length === ctx.availableEps.length;
-        const compress = Boolean($('chkCompressMerge')?.checked);
+        const compress = forceCompress !== null ? Boolean(forceCompress) : Boolean($('chkCompressMerge')?.checked);
         $('mergeModal').classList.remove('show');
         await ensureSSE();
         const r = await api('/api/merge-drama', {
@@ -3375,7 +3598,7 @@
         }
         if (r.jobs) applyJobsPayload(r.jobs, r.summary);
         startPolling();
-        toast(`${compress ? '🗜️ កំពុងបង្ហាប់ & ផ្គុំ' : '🎞️ កំពុងផ្គុំ'} ${r.count} ភាគតាមលំដាប់ (EP${r.firstEp} → EP${r.lastEp})...`, 'ok');
+        toast(`${compress ? '🗜️ កំពុងបង្ហាប់ & ផ្គុំ' : '⚡ កំពុងផ្គុំលឿន'} ${r.count} ភាគតាមលំដាប់ (EP${r.firstEp} → EP${r.lastEp})...`, 'ok');
       }
 
       // ================= VIDEO PLAYER =================
@@ -3546,29 +3769,71 @@
       let licenseHeartbeatTimer = null;
       let licenseStatusState = { enforced: false, machineId: '' };
 
-      function applyAnnouncementBanner(text) {
+      let cloudBannerState = { text: '', downloadUrl: '' };
+
+      function formatAnnouncementTextHtml(msg) {
+        const urlRe = /https?:\/\/[^\s<>"')]+/gi;
+        let out = '';
+        let last = 0;
+        let m;
+        while ((m = urlRe.exec(msg)) !== null) {
+          out += esc(msg.slice(last, m.index));
+          const u = m[0];
+          out += `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer" style="color:#38bdf8;text-decoration:underline;font-weight:700;">${esc(u)}</a>`;
+          last = urlRe.lastIndex;
+        }
+        out += esc(msg.slice(last));
+        return out;
+      }
+
+      function renderCloudBanner() {
         const bar = $('cloudBannerBar');
         if (!bar) return;
-        const msg = String(text || '').trim();
-        if (msg) {
-          bar.textContent = msg;
-          bar.style.display = 'block';
-        } else {
-          bar.textContent = '';
+        const msg = cloudBannerState.text;
+        const dlUrl = cloudBannerState.downloadUrl;
+        if (!msg && !dlUrl) {
+          bar.innerHTML = '';
           bar.style.display = 'none';
+          return;
         }
+        const textHtml = msg ? `<span>${formatAnnouncementTextHtml(msg)}</span>` : '<span>📢 មានកំណែ Update ថ្មី!</span>';
+        const btnHtml = dlUrl
+          ? `<a href="${esc(dlUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:5px;padding:3px 12px;border-radius:99px;background:rgba(56,189,248,0.22);border:1px solid rgba(56,189,248,0.55);color:#f0f9ff;font-size:12px;font-weight:700;text-decoration:none;">⬇️ ទាញយកកំណែថ្មី</a>`
+          : '';
+        bar.innerHTML = `${textHtml}${btnHtml}`;
+        bar.style.cursor = dlUrl ? 'pointer' : 'default';
+        bar.title = dlUrl ? `ចុចដើម្បីបើក៖ ${dlUrl}` : '';
+        bar.style.display = 'flex';
+      }
+
+      if ($('cloudBannerBar')) {
+        $('cloudBannerBar').addEventListener('click', (e) => {
+          if (e.target.closest('a')) return;
+          if (cloudBannerState.downloadUrl) {
+            window.open(cloudBannerState.downloadUrl, '_blank', 'noopener,noreferrer');
+          }
+        });
+      }
+
+      function applyAnnouncementBanner(text) {
+        cloudBannerState.text = String(text || '').trim();
+        renderCloudBanner();
       }
 
       function applyGateDownloadLink(url) {
-        const el = $('gateDownloadLink');
-        if (!el) return;
         const clean = String(url || '').trim();
-        if (/^https?:\/\//i.test(clean)) {
-          el.href = clean;
-          el.style.display = 'inline-block';
-        } else {
-          el.style.display = 'none';
+        const safeUrl = /^https?:\/\//i.test(clean) ? clean : '';
+        cloudBannerState.downloadUrl = safeUrl;
+        const el = $('gateDownloadLink');
+        if (el) {
+          if (safeUrl) {
+            el.href = safeUrl;
+            el.style.display = 'inline-block';
+          } else {
+            el.style.display = 'none';
+          }
         }
+        renderCloudBanner();
       }
 
       function updateSettingsLicenseUi(info, enforced, machineId) {
@@ -3665,9 +3930,11 @@
             $('socialUseAria2').checked = false;
             $('socialUseAria2').disabled = true;
           }
+          syncAdminUi();
         }).catch(() => {});
+        syncAdminUi();
         await Promise.all([loadConfig(), loadCatalog(false), loadLibrary(true)]);
-        if (!state.isPackagedClient) {
+        if (!state.isPackagedClient && isAdminMode()) {
           checkUpstreamStatus(false, false).catch(() => {});
         }
         try {
@@ -3715,18 +3982,28 @@
         }
       }
 
+      function applyAppVersion(ver) {
+        const v = String(ver || '').trim();
+        if (!v) return;
+        if ($('settingsVersionLabel')) $('settingsVersionLabel').textContent = `EZA PRO Downloader v${v}`;
+        if ($('brandVersionBadge')) $('brandVersionBadge').textContent = `v${v}`;
+        document.title = `EZA PRO v${v}`;
+      }
+
       // ================= BOOT & EVENTS =================
       async function loadConfig() {
         try {
-          $('chkAutoMerge').checked = getPref('eza_autoMerge', 'hdrg_autoMerge') === '1';
+          const autoPref = getPref('eza_autoMerge', 'hdrg_autoMerge');
+          $('chkAutoMerge').checked = autoPref !== '0';
           if ($('chkCompressMerge')) $('chkCompressMerge').checked = getPref('eza_compressMerge') === '1';
           syncMultiSelectUi();
           const savedQual = getPref('eza_quality', 'hdrg_quality');
           if (savedQual === 'fast' || savedQual === '1080p' || savedQual === '720p') $('qualitySelect').value = savedQual;
           const savedWorkers = getPref('eza_workers', 'hdrg_workers');
-          if (savedWorkers && ['6', '8', '12', '16'].includes(savedWorkers)) $('workersSelect').value = savedWorkers;
+          if (savedWorkers && ['6', '8', '12', '16', '20'].includes(savedWorkers)) $('workersSelect').value = savedWorkers;
 
-          const [, dir] = await Promise.all([api('/api/config'), api('/api/download-dir')]);
+          const [cfg, dir] = await Promise.all([api('/api/config'), api('/api/download-dir')]);
+          if (cfg && cfg.version) applyAppVersion(cfg.version);
           if (dir && dir.path) {
             state.downloadDir = dir.path;
             $('folderInput').value = dir.path;
@@ -3815,11 +4092,14 @@
         renderSources();
         renderCats();
         syncBrowseUi();
+        syncAdminUi();
 
         try {
           const stRes = await fetch('/api/license/status');
           const stData = await stRes.json().catch(() => ({}));
+          if (stData.appVersion) applyAppVersion(stData.appVersion);
           state.isPackagedClient = Boolean(stData.isPackagedClient);
+          syncAdminUi();
           licenseStatusState.enforced = Boolean(stData.cloudLicenseEnforced);
           licenseStatusState.machineId = stData.machineId || '';
           if ($('gateMachineIdText') && stData.machineId) {
@@ -3871,6 +4151,12 @@
 
       $('btnResolve').addEventListener('click', doSearch);
       $('searchInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
+      $('searchInput').addEventListener('paste', () => {
+        setTimeout(() => {
+          const val = ($('searchInput')?.value || '').trim();
+          if (/^https?:\/\/\S+/i.test(val)) doSearch();
+        }, 60);
+      });
       $('btnPaste').addEventListener('click', async () => {
         try {
           const t = await navigator.clipboard.readText();
@@ -3890,6 +4176,12 @@
       });
       $('btnSocialProbe').addEventListener('click', () => safeRun(() => probeSocialUrl()));
       $('socialUrlInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') safeRun(() => probeSocialUrl()); });
+      $('socialUrlInput').addEventListener('paste', () => {
+        setTimeout(() => {
+          const val = ($('socialUrlInput')?.value || '').trim();
+          if (/^https?:\/\/\S+/i.test(val)) safeRun(() => probeSocialUrl(val));
+        }, 60);
+      });
       $('btnSocialPaste').addEventListener('click', async () => {
         try {
           const t = await navigator.clipboard.readText();
@@ -3960,23 +4252,6 @@
       }
       if ($('btnFindFullMovie')) {
         $('btnFindFullMovie').addEventListener('click', () => safeRun(() => loadFullMovieMirrors(true)));
-      }
-      if ($('btnDownloadCoverHd')) {
-        $('btnDownloadCoverHd').addEventListener('click', () => {
-          const d = state.currentDrama;
-          if (!d || !d.cover) {
-            toast('រឿងនេះមិនមានរូបក្របទេ', 'warn');
-            return;
-          }
-          const url = `/api/cover-hd?seriesId=${encodeURIComponent(d.seriesId || '')}&cover=${encodeURIComponent(d.cover || '')}&title=${encodeURIComponent(d.titleKhmer || d.title || 'Drama')}&folder=${encodeURIComponent(d.title || '')}`;
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `${d.titleKhmer || d.title || 'Drama'} - Cover HD.jpg`;
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          toast('🖼️ កំពុងទាញយករូបក្របគុណភាពច្បាស់កំពូល (Ultra-HD Cover.jpg)...', 'ok');
-        });
       }
       if ($('btnRefreshFullMovie')) {
         $('btnRefreshFullMovie').addEventListener('click', () => safeRun(() => loadFullMovieMirrors(false)));
@@ -4055,10 +4330,21 @@
         patchBrowseCardStatuses();
         syncFloatingBars();
       });
-      $('chkMultiAutoMerge').addEventListener('change', () => {
-        $('chkAutoMerge').checked = $('chkMultiAutoMerge').checked;
-        setPref('eza_autoMerge', $('chkAutoMerge').checked ? '1' : '0');
-      });
+      function syncAutoMergePref(checked) {
+        const val = Boolean(checked);
+        $('chkAutoMerge').checked = val;
+        if ($('chkMultiAutoMerge')) $('chkMultiAutoMerge').checked = val;
+        if ($('chkBrowseAutoMerge')) $('chkBrowseAutoMerge').checked = val;
+        setPref('eza_autoMerge', val ? '1' : '0');
+        syncButtons();
+      }
+      $('chkMultiAutoMerge').addEventListener('change', () => syncAutoMergePref($('chkMultiAutoMerge').checked));
+      if ($('chkBrowseAutoMerge')) {
+        $('chkBrowseAutoMerge').addEventListener('change', () => {
+          syncAutoMergePref($('chkBrowseAutoMerge').checked);
+          toast($('chkBrowseAutoMerge').checked ? '🎞️ បានបើកអូតូផ្គុំពេញ (Direct Copy ១–៥ វិនាទី)' : 'បានបិទអូតូផ្គុំពេញ', 'ok');
+        });
+      }
 
       $('btnLiveDockManage').addEventListener('click', () => setView('manage'));
       $('btnLiveDockStopAll').addEventListener('click', stopAllActiveJobs);
@@ -4092,6 +4378,19 @@
           if (state.expandedLibEps.has(fName)) state.expandedLibEps.delete(fName);
           else state.expandedLibEps.add(fName);
           renderManage();
+        } else if (act === 'quick-merge-folder') {
+          safeRun(async () => {
+            const folder = btn.dataset.folder;
+            await ensureSSE();
+            const r = await api('/api/merge-drama', {
+              method: 'POST',
+              body: JSON.stringify({ folder, compress: false })
+            });
+            if (!r.success) { toast(r.error || 'មិនអាចផ្គុំបានទេ', 'err'); return; }
+            if (r.jobs) applyJobsPayload(r.jobs, r.summary);
+            startPolling();
+            toast(`⚡ កំពុងផ្គុំលឿន ${r.count} ភាគ...`, 'ok');
+          });
         } else if (act === 'merge-folder') {
           safeRun(async () => {
             const folder = btn.dataset.folder;
@@ -4182,18 +4481,18 @@
       $('btnDownloadCover').addEventListener('click', () => {
         const d = state.currentDrama;
         if (!d || !d.cover) {
-          toast('មិនមានរូបភាព Cover ទេ', 'warn');
+          toast('រឿងនេះមិនមានរូបក្របទេ', 'warn');
           return;
         }
-        toast('🖼️ កំពុងទាញយករូប Cover...', 'ok');
-        const title = d.titleKhmer || d.title || 'drama';
-        const dlUrl = `/api/download-cover?url=${encodeURIComponent(d.cover)}&title=${encodeURIComponent(title)}&folder=${encodeURIComponent(d.title || '')}&seriesId=${encodeURIComponent(d.seriesId || '')}`;
+        const title = d.titleKhmer || d.title || 'Drama';
+        const dlUrl = `/api/cover-hd?seriesId=${encodeURIComponent(d.seriesId || '')}&cover=${encodeURIComponent(d.cover || '')}&title=${encodeURIComponent(title)}&folder=${encodeURIComponent(d.title || '')}`;
         const a = document.createElement('a');
         a.href = dlUrl;
-        a.download = `${title}_cover.jpg`;
+        a.download = `${title} - Cover HD.jpg`;
         document.body.appendChild(a);
         a.click();
-        document.body.removeChild(a);
+        a.remove();
+        toast('🖼️ កំពុងទាញយករូបក្របគុណភាពច្បាស់កំពូល (Ultra-HD Cover.jpg)...', 'ok');
       });
 
       $('btnEditTitle').addEventListener('click', () => safeRun(async () => {
@@ -4272,6 +4571,15 @@
         const el = $('upstreamCheckStatus');
         const settingsBtn = $('btnSettings');
         if (!el || !report) return;
+        const showGh = !state.isPackagedClient && isAdminMode();
+        if (!showGh) {
+          el.style.display = 'none';
+          if (settingsBtn) {
+            settingsBtn.textContent = '⚙️';
+            settingsBtn.title = 'ការកំណត់';
+          }
+          return;
+        }
         const safeGhUrl = (u) => (typeof u === 'string' && u.startsWith('https://github.com/')) ? u : '';
         if (report.hasUpdates) {
           const items = (report.repos || []).filter((r) => r.hasUpdate).map((r) => {
@@ -4290,7 +4598,7 @@
           });
           el.innerHTML = `<div style="color:#fbbf24; font-weight:700;">🔔 មាន Update ថ្មីលើ GitHub Upstream!</div>${items.join('<br>')}`;
           el.style.display = 'block';
-          if (settingsBtn && !state.isPackagedClient) {
+          if (settingsBtn && showGh) {
             settingsBtn.innerHTML = '⚙️ <span style="display:inline-block;width:7px;height:7px;border-radius:999px;background:#f59e0b;vertical-align:top;margin-left:1px;"></span>';
             settingsBtn.title = 'ការកំណត់ (មាន Update ថ្មីលើ GitHub)';
           }
@@ -4305,12 +4613,13 @@
       }
 
       async function checkUpstreamStatus(force = false, notifyUser = false) {
+        if (state.isPackagedClient || !isAdminMode()) return null;
         const report = await api(`/api/upstream-status${force ? '?refresh=1' : ''}`);
         if (report) {
           renderUpstreamReport(report);
           if (notifyUser) {
             toast(report.summaryText || 'បានពិនិត្យ GitHub Upstream រួចរាល់', report.hasUpdates ? 'warn' : 'ok');
-          } else if (report.hasUpdates && !state.isPackagedClient) {
+          } else if (report.hasUpdates) {
             toast('🔔 មាន Update ថ្មីលើ GitHub Upstream — សូមពិនិត្យក្នុង ការកំណត់!', 'warn');
           }
         }
@@ -4338,6 +4647,31 @@
         const r = await api('/api/stop-download', { method: 'POST', body: JSON.stringify({ seriesId: state.currentDrama.seriesId }) });
         if (r.jobs) applyJobsPayload(r.jobs, r.summary);
       }));
+      if ($('btnQuickMergeAll')) {
+        $('btnQuickMergeAll').addEventListener('click', () => safeRun(async () => {
+          const d = state.currentDrama;
+          if (!d) return;
+          const readyEps = [];
+          for (let ep = 1; ep <= d.total; ep += 1) {
+            const l = liveState(ep);
+            if (l ? l.status === 'done' : state.downloaded.has(ep)) readyEps.push(ep);
+          }
+          if (readyEps.length < 2) {
+            toast('ត្រូវការយ៉ាងតិច ២ ភាគដើម្បីផ្គុំ', 'warn');
+            return;
+          }
+          await ensureSSE();
+          const r = await api('/api/merge-drama', {
+            method: 'POST',
+            body: JSON.stringify({ seriesId: d.seriesId, compress: false })
+          });
+          if (!r.success) { toast(r.error || 'មិនអាចផ្គុំបានទេ', 'err'); return; }
+          if (r.jobs) applyJobsPayload(r.jobs, r.summary);
+          startPolling();
+          toast(`⚡ កំពុងផ្គុំលឿន ${r.count} ភាគ (EP${r.firstEp} → EP${r.lastEp})...`, 'ok');
+        }));
+      }
+
       $('btnMerge').addEventListener('click', () => {
         const d = state.currentDrama;
         if (!d) return;
@@ -4385,7 +4719,10 @@
         updateMergeModalView();
       });
 
-      $('btnConfirmMerge').addEventListener('click', () => safeRun(confirmAndStartMerge));
+      $('btnConfirmMerge').addEventListener('click', () => safeRun(() => confirmAndStartMerge()));
+      if ($('btnMergeCompress')) {
+        $('btnMergeCompress').addEventListener('click', () => safeRun(() => confirmAndStartMerge(true)));
+      }
       if ($('chkCompressMerge')) {
         $('chkCompressMerge').addEventListener('change', () => {
           setPref('eza_compressMerge', $('chkCompressMerge').checked ? '1' : '0');
@@ -4393,10 +4730,25 @@
         });
       }
       $('btnPlayFull').addEventListener('click', openFullVideo);
-      $('chkAutoMerge').addEventListener('change', () => {
-        $('chkMultiAutoMerge').checked = $('chkAutoMerge').checked;
-        setPref('eza_autoMerge', $('chkAutoMerge').checked ? '1' : '0');
+      $('chkAutoMerge').addEventListener('change', () => syncAutoMergePref($('chkAutoMerge').checked));
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        const vm = $('videoModal');
+        if (vm && vm.classList.contains('show')) { closeVideo(); return; }
+        const openModals = document.querySelectorAll('.modal-bg.show');
+        if (openModals.length) openModals[openModals.length - 1].classList.remove('show');
       });
+
+      for (const hStrip of [$('sourceRow'), $('catRow')]) {
+        if (!hStrip) continue;
+        hStrip.addEventListener('wheel', (e) => {
+          if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && hStrip.scrollWidth > hStrip.clientWidth) {
+            e.preventDefault();
+            hStrip.scrollLeft += e.deltaY;
+          }
+        }, { passive: false });
+      }
       $('qualitySelect').addEventListener('change', () => {
         setPref('eza_quality', $('qualitySelect').value);
       });
@@ -4466,9 +4818,32 @@
       $('btnSettings').addEventListener('click', () => {
         $('folderInput').value = state.downloadDir || '';
         if ($('customCmsStatus')) $('customCmsStatus').textContent = '';
-        loadCustomCmsSources();
+        syncAdminUi();
+        if (isAdminMode()) loadCustomCmsSources();
         $('settingsModal').classList.add('show');
       });
+
+      if ($('settingsVersionLabel')) {
+        let verTapCount = 0;
+        let verTapTimer = null;
+        $('settingsVersionLabel').addEventListener('click', () => {
+          verTapCount += 1;
+          clearTimeout(verTapTimer);
+          verTapTimer = setTimeout(() => { verTapCount = 0; }, 2200);
+          if (verTapCount >= 5) {
+            verTapCount = 0;
+            const next = isAdminMode() ? '0' : '1';
+            try { localStorage.setItem('eza_admin', next); } catch {}
+            syncAdminUi();
+            if (next === '1') {
+              loadCustomCmsSources();
+              toast('🔓 បើក Admin Mode រួចរាល់', 'ok');
+            } else {
+              toast('🔒 បានបិទ Admin Mode', 'info');
+            }
+          }
+        });
+      }
 
       if ($('btnTestCustomCms')) {
         $('btnTestCustomCms').addEventListener('click', () => safeRun(async () => {
@@ -4745,6 +5120,27 @@
           loadCatalog(true);
         }
       }, { passive: true });
+
+      ['sourceRow', 'catRow'].forEach((rowId) => {
+        const el = $(rowId);
+        if (!el) return;
+        el.addEventListener('scroll', () => syncHScrollRow(rowId), { passive: true });
+        el.addEventListener('wheel', (e) => {
+          if (el.scrollWidth > el.clientWidth && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+            e.preventDefault();
+            el.scrollLeft += e.deltaY;
+          }
+        }, { passive: false });
+      });
+      document.querySelectorAll('[data-hscroll]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const el = $(btn.dataset.hscroll);
+          if (!el) return;
+          const step = Math.max(180, Math.round(el.clientWidth * 0.6));
+          el.scrollBy({ left: Number(btn.dataset.dir) * step, behavior: 'smooth' });
+        });
+      });
+      window.addEventListener('resize', syncAllHScroll, { passive: true });
 
       boot();
     })();
